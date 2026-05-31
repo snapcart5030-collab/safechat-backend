@@ -13,11 +13,7 @@ connectDB();
 
 app.use(
   cors({
-    origin: [
-      "https://safeechats.web.app",
-      "http://localhost:5173",
-    ],
-    credentials: true,
+    origin: "*",
   })
 );
 
