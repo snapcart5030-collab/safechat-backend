@@ -18,6 +18,15 @@ const sendMessage = async (
         message,
       });
 
+    if (global.io) {
+      global.io
+        .to(receiverId)
+        .emit(
+          "receiveMessage",
+          newMessage
+        );
+    }
+
     res.status(201).json(
       newMessage
     );
