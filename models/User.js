@@ -22,6 +22,16 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    aiQuestionCount: {
+      type: Number,
+      default: 0,
+    },
+
+    lastQuestionReset: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
