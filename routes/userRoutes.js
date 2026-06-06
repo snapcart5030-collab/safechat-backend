@@ -5,10 +5,15 @@ const router =
 
 const {
   getUsers,
+  updateProfile,
 } = require(
   "../controllers/userController"
 );
 
 router.get("/", getUsers);
+router.put(
+  "/update-profile",
+  updateProfile
+);
 
 module.exports = router;
