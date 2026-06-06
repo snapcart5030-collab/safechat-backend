@@ -19,13 +19,20 @@ const sendMessage = async (
       });
 
     if (global.io) {
-      global.io
-        .to(receiverId)
-        .emit(
-          "receiveMessage",
-          newMessage
-        );
-    }
+  global.io
+    .to(receiverId)
+    .emit(
+      "receiveMessage",
+      newMessage
+    );
+
+  global.io
+    .to(senderId)
+    .emit(
+      "receiveMessage",
+      newMessage
+    );
+}
 
     res.status(201).json(
       newMessage
