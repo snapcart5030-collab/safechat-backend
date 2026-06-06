@@ -37,6 +37,14 @@ const getUsers = async (req, res) => {
                 createdAt: -1,
               });
 
+            const messageCount =
+              await Message.countDocuments({
+                senderId:
+                  user._id,
+                receiverId:
+                  currentUserId,
+              });
+
             return {
               ...user.toObject(),
 
@@ -47,6 +55,8 @@ const getUsers = async (req, res) => {
               lastMessageTime:
                 lastMessage?.createdAt ||
                 null,
+
+              messageCount,
             };
           }
         )
