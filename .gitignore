@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-
+serviceAccountKey.json
 
 firebase-admin.json
 # Environment variables
