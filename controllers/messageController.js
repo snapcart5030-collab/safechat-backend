@@ -19,35 +19,37 @@ const sendMessage = async (
         receiverId,
         message,
       });
-      const receiverUser =
-  await User.findById(receiverId);
+    const receiverUser =
+      await User.findById(receiverId);
 
-if (
-  receiverUser &&
-  receiverUser.fcmToken
-) {
-  await sendNotification(
-    receiverUser.fcmToken,
-    "New Message",
-    message
-  );
-}
+    if (
+      receiverUser &&
+      receiverUser.fcmToken
+    ) {
+      await sendNotification(
+        receiverUser.fcmToken,
+        "New Message",
+        message
+      );
+    }
 
     if (global.io) {
-  global.io
-    .to(receiverId)
-    .emit(
-      "receiveMessage",
-      newMessage
-    );
+      global.io
+        .to(receiverId)
+        .emit(
+          "receiveMessage",
+          newMessage
+        );
 
-  global.io
-    .to(senderId)
-    .emit(
-      "receiveMessage",
-      newMessage
-    );
-}
+      if (senderId !== receiverId) {
+        global.io
+          .to(senderId)
+          .emit(
+            "receiveMessage",
+            newMessage
+          );
+      }
+    }
 
     res.status(201).json(
       newMessage
