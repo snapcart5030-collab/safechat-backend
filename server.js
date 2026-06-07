@@ -11,7 +11,7 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const aiRoutes = require("./routes/aiRoutes");
-const fcmRoutes = require("./routes/fcmRoutes"); 
+const fcmRoutes = require("./routes/fcmRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -47,11 +47,25 @@ io.on("connection", (socket) => {
     socket.join(userId);
   });
 
+  // Typing Start
+  socket.on("typing", (data) => {
+    socket.to(data.receiverId).emit("showTyping", {
+      senderId: data.senderId,
+    });
+  });
+
+  // Typing Stop
+  socket.on("stopTyping", (data) => {
+    socket.to(data.receiverId).emit("hideTyping");
+  });
+
   socket.on("disconnect", () => {
     console.log("User Disconnected");
   });
 });
- console.log('done all system')
+
+console.log("done all system");
+
 app.get("/", (req, res) => {
   res.send("Server Running");
 });
