@@ -4,7 +4,9 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
+
 console.log("Firebase Admin Connected Successfully");
+
 const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
@@ -19,13 +21,16 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
+    methods: ["GET", "POST"],
   },
 });
 
 global.io = io;
 
+// Database Connection
 connectDB();
 
+// Middleware
 app.use(
   cors({
     origin: "*",
@@ -34,37 +39,46 @@ app.use(
 
 app.use(express.json());
 
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/fcm", fcmRoutes);
 
+// ================= SOCKET.IO =================
 io.on("connection", (socket) => {
-  console.log("User Connected");
+  console.log("User Connected:", socket.id);
 
+  // Join personal room
   socket.on("join", (userId) => {
     socket.join(userId);
+    console.log(`User Joined Room: ${userId}`);
   });
 
   // Typing Start
   socket.on("typing", (data) => {
-    socket.to(data.receiverId).emit("showTyping", {
+    console.log("Typing Event:", data);
+
+    io.to(data.receiverId).emit("showTyping", {
       senderId: data.senderId,
     });
   });
 
   // Typing Stop
   socket.on("stopTyping", (data) => {
-    socket.to(data.receiverId).emit("hideTyping");
+    console.log("Stop Typing Event:", data);
+
+    io.to(data.receiverId).emit("hideTyping");
   });
 
   socket.on("disconnect", () => {
-    console.log("User Disconnected");
+    console.log("User Disconnected:", socket.id);
   });
 });
+// ==============================================
 
-console.log("done all system");
+console.log("All Systems Ready");
 
 app.get("/", (req, res) => {
   res.send("Server Running");
@@ -73,5 +87,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 2036;
 
 server.listen(PORT, () => {
-  console.log(`Server Running On ${PORT}`);
+  console.log(`Server Running On Port ${PORT}`);
 });
