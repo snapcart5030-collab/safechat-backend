@@ -6,12 +6,13 @@ const sendMessage = async (
   req,
   res
 ) => {
-    console.log("================================");
+  console.log("================================");
   console.log("SEND MESSAGE API CALLED");
   console.log("sender:", req.body.senderId);
   console.log("receiver:", req.body.receiverId);
   console.log("message:", req.body.message);
   console.log("================================");
+
   try {
     const {
       senderId,
@@ -19,12 +20,47 @@ const sendMessage = async (
       message,
     } = req.body;
 
+    const senderUser =
+      await User.findById(senderId);
+
+    const receiverUserCheck =
+      await User.findById(receiverId);
+
+    if (
+      !senderUser ||
+      !receiverUserCheck
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const canChat =
+      senderUser.following.some(
+        (id) =>
+          id.toString() === receiverId
+      ) &&
+      receiverUserCheck.followers.some(
+        (id) =>
+          id.toString() === senderId
+      );
+
+    if (!canChat) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Follow request not accepted",
+      });
+    }
+
     const newMessage =
       await Message.create({
         senderId,
         receiverId,
         message,
       });
+
     const receiverUser =
       await User.findById(receiverId);
 

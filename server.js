@@ -14,6 +14,7 @@ const userRoutes = require("./routes/userRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const fcmRoutes = require("./routes/fcmRoutes");
+const followRoutes = require("./routes/followRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -45,7 +46,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/fcm", fcmRoutes);
+app.use("/api/follow", followRoutes);
 
+// ================= SOCKET.IO =================
 // ================= SOCKET.IO =================
 io.on("connection", (socket) => {
   console.log("User Connected:", socket.id);
@@ -56,26 +59,79 @@ io.on("connection", (socket) => {
     console.log(`User Joined Room: ${userId}`);
   });
 
+  // Follow Request
+  socket.on(
+    "sendFollowRequest",
+    (data) => {
+      io.to(
+        data.receiverId
+      ).emit(
+        "newFollowRequest",
+        {
+          senderId:
+            data.senderId,
+        }
+      );
+    }
+  );
+
+  // Follow Accepted
+  socket.on(
+    "acceptFollowRequest",
+    (data) => {
+      io.to(
+        data.requesterId
+      ).emit(
+        "followAccepted",
+        {
+          currentUserId:
+            data.currentUserId,
+        }
+      );
+    }
+  );
+
   // Typing Start
   socket.on("typing", (data) => {
-    console.log("Typing Event:", data);
+    console.log(
+      "Typing Event:",
+      data
+    );
 
-    io.to(data.receiverId).emit("showTyping", {
-      senderId: data.senderId,
+    io.to(
+      data.receiverId
+    ).emit("showTyping", {
+      senderId:
+        data.senderId,
     });
   });
 
   // Typing Stop
-  socket.on("stopTyping", (data) => {
-    console.log("Stop Typing Event:", data);
+  socket.on(
+    "stopTyping",
+    (data) => {
+      console.log(
+        "Stop Typing Event:",
+        data
+      );
 
-    io.to(data.receiverId).emit("hideTyping");
-  });
+      io.to(
+        data.receiverId
+      ).emit("hideTyping");
+    }
+  );
 
-  socket.on("disconnect", () => {
-    console.log("User Disconnected:", socket.id);
-  });
+  socket.on(
+    "disconnect",
+    () => {
+      console.log(
+        "User Disconnected:",
+        socket.id
+      );
+    }
+  );
 });
+// ==============================================
 // ==============================================
 
 console.log("All Systems Ready");
