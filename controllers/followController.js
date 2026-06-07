@@ -143,7 +143,6 @@ const acceptFollowRequest =
       );
 
       await currentUser.save();
-
       await requester.save();
 
       res.json({
@@ -194,9 +193,35 @@ const rejectFollowRequest =
     }
   };
 
+const getAcceptedUsers =
+  async (req, res) => {
+    try {
+      const { userId } =
+        req.params;
+
+      const user =
+        await User.findById(
+          userId
+        ).populate(
+          "following",
+          "_id name email picture"
+        );
+
+      res.json(
+        user.following
+      );
+    } catch (error) {
+      res.status(500).json({
+        message:
+          error.message,
+      });
+    }
+  };
+
 module.exports = {
   sendFollowRequest,
   getFollowRequests,
   acceptFollowRequest,
   rejectFollowRequest,
+  getAcceptedUsers,
 };

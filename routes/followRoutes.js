@@ -8,6 +8,7 @@ const {
   getFollowRequests,
   acceptFollowRequest,
   rejectFollowRequest,
+  getAcceptedUsers,
 } = require(
   "../controllers/followController"
 );
@@ -30,6 +31,10 @@ router.post(
 router.post(
   "/reject-request",
   rejectFollowRequest
+);
+router.get(
+  "/accepted/:userId",
+  getAcceptedUsers
 );
 
 module.exports = router;
