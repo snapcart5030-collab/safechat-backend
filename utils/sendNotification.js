@@ -20,11 +20,14 @@ const sendNotification = async (
       },
     };
 
+
+
+
     const response =
       await admin
         .messaging()
         .send(message);
-
+    console.log("Notification Sent", response);
     console.log(
       "Notification Sent",
       response
