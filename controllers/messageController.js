@@ -6,6 +6,12 @@ const sendMessage = async (
   req,
   res
 ) => {
+    console.log("================================");
+  console.log("SEND MESSAGE API CALLED");
+  console.log("sender:", req.body.senderId);
+  console.log("receiver:", req.body.receiverId);
+  console.log("message:", req.body.message);
+  console.log("================================");
   try {
     const {
       senderId,

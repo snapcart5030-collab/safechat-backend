@@ -5,6 +5,7 @@ const sendNotification = async (
   title,
   body
 ) => {
+   console.log("FCM FUNCTION CALLED");
   try {
     const message = {
       token,
@@ -27,11 +28,7 @@ const sendNotification = async (
       await admin
         .messaging()
         .send(message);
-    console.log("Notification Sent", response);
-    console.log(
-      "Notification Sent",
-      response
-    );
+  console.log("FCM SENT SUCCESS:", response);
   } catch (error) {
     console.log(
       "Notification Error",
