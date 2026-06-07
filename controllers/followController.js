@@ -55,11 +55,22 @@ const sendFollowRequest = async (
       });
     }
 
-    receiver.followRequests.push(
-      senderId
-    );
+receiver.followRequests.push(
+  senderId
+);
 
-    await receiver.save();
+await receiver.save();
+
+global.io
+  .to(receiverId)
+  .emit(
+    "newFollowRequest",
+    {
+      senderId,
+    }
+  );
+
+ 
 
     res.json({
       success: true,
@@ -142,8 +153,26 @@ const acceptFollowRequest =
         currentUserId
       );
 
-      await currentUser.save();
-      await requester.save();
+  await currentUser.save();
+await requester.save();
+
+global.io
+  .to(requesterId)
+  .emit(
+    "followAccepted",
+    {
+      currentUserId,
+    }
+  );
+
+global.io
+  .to(currentUserId)
+  .emit(
+    "followAccepted",
+    {
+      requesterId,
+    }
+  );
 
       res.json({
         success: true,
