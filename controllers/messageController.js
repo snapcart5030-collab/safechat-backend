@@ -1,4 +1,6 @@
 const Message = require("../models/Message");
+const User = require("../models/User");
+const sendNotification = require("../utils/sendNotification");
 
 const sendMessage = async (
   req,
@@ -17,6 +19,19 @@ const sendMessage = async (
         receiverId,
         message,
       });
+      const receiverUser =
+  await User.findById(receiverId);
+
+if (
+  receiverUser &&
+  receiverUser.fcmToken
+) {
+  await sendNotification(
+    receiverUser.fcmToken,
+    "New Message",
+    message
+  );
+}
 
     if (global.io) {
   global.io
