@@ -50,27 +50,21 @@ app.use("/api/follow", followRoutes);
 
 // ================= SOCKET.IO =================
 // ================= SOCKET.IO =================
+// ================= SOCKET.IO =================
 io.on("connection", (socket) => {
-  console.log("User Connected:", socket.id);
+  console.log(
+    "User Connected:",
+    socket.id
+  );
 
   // Join personal room
-  socket.on("join", (userId) => {
-    socket.join(userId);
-    console.log(`User Joined Room: ${userId}`);
-  });
-
-  // Follow Request
   socket.on(
-    "sendFollowRequest",
-    (data) => {
-      io.to(
-        data.receiverId
-      ).emit(
-        "newFollowRequest",
-        {
-          senderId:
-            data.senderId,
-        }
+    "join",
+    (userId) => {
+      socket.join(userId);
+
+      console.log(
+        `User Joined Room: ${userId}`
       );
     }
   );
@@ -92,19 +86,25 @@ io.on("connection", (socket) => {
   );
 
   // Typing Start
-  socket.on("typing", (data) => {
-    console.log(
-      "Typing Event:",
-      data
-    );
+  socket.on(
+    "typing",
+    (data) => {
+      console.log(
+        "Typing Event:",
+        data
+      );
 
-    io.to(
-      data.receiverId
-    ).emit("showTyping", {
-      senderId:
-        data.senderId,
-    });
-  });
+      io.to(
+        data.receiverId
+      ).emit(
+        "showTyping",
+        {
+          senderId:
+            data.senderId,
+        }
+      );
+    }
+  );
 
   // Typing Stop
   socket.on(
@@ -117,7 +117,9 @@ io.on("connection", (socket) => {
 
       io.to(
         data.receiverId
-      ).emit("hideTyping");
+      ).emit(
+        "hideTyping"
+      );
     }
   );
 
@@ -131,6 +133,7 @@ io.on("connection", (socket) => {
     }
   );
 });
+// =============================================
 // ==============================================
 // ==============================================
 
