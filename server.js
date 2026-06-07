@@ -1,16 +1,18 @@
 require("dotenv").config();
+const admin = require("./firebase");
 
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-
+console.log("Firebase Admin Connected Successfully");
 const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const fcmRoutes = require("./routes/fcmRoutes"); 
 
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +39,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/fcm", fcmRoutes);
 
 io.on("connection", (socket) => {
   console.log("User Connected");
@@ -49,7 +52,7 @@ io.on("connection", (socket) => {
     console.log("User Disconnected");
   });
 });
-
+ console.log('done all system')
 app.get("/", (req, res) => {
   res.send("Server Running");
 });
