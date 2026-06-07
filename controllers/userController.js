@@ -15,51 +15,49 @@ const getUsers = async (req, res) => {
 
     const usersWithLastMessage =
       await Promise.all(
-        users.map(
-          async (user) => {
-            const lastMessage =
-              await Message.findOne({
-                $or: [
-                  {
-                    senderId:
-                      currentUserId,
-                    receiverId:
-                      user._id,
-                  },
-                  {
-                    senderId:
-                      user._id,
-                    receiverId:
-                      currentUserId,
-                  },
-                ],
-              }).sort({
-                createdAt: -1,
-              });
+        users.map(async (user) => {
+          const lastMessage =
+            await Message.findOne({
+              $or: [
+                {
+                  senderId:
+                    currentUserId,
+                  receiverId:
+                    user._id,
+                },
+                {
+                  senderId:
+                    user._id,
+                  receiverId:
+                    currentUserId,
+                },
+              ],
+            }).sort({
+              createdAt: -1,
+            });
 
-            const messageCount =
-              await Message.countDocuments({
-                senderId:
-                  user._id,
-                receiverId:
-                  currentUserId,
-              });
+          const messageCount =
+            await Message.countDocuments({
+              senderId:
+                user._id,
+              receiverId:
+                currentUserId,
+            });
 
-            return {
-              ...user.toObject(),
+          return {
+            ...user.toObject(),
 
-              lastMessage:
-                lastMessage?.message ||
-                "",
+            lastMessage:
+              lastMessage?.message ||
+              "",
 
-              lastMessageTime:
-                lastMessage?.createdAt ||
-                null,
+            lastMessageTime:
+              lastMessage?.createdAt ||
+              null,
 
-              messageCount,
-            };
-          }
-        )
+            messageCount,
+          };
+        })
       );
 
     res.json(
@@ -105,7 +103,50 @@ const updateProfile = async (
   }
 };
 
+const searchUsers = async (
+  req,
+  res
+) => {
+  try {
+    const { q } = req.query;
+
+    if (!q) {
+      return res.json([]);
+    }
+
+    const users =
+      await User.find({
+        $or: [
+          {
+            name: {
+              $regex: q,
+              $options: "i",
+            },
+          },
+          {
+            email: {
+              $regex: q,
+              $options: "i",
+            },
+          },
+        ],
+      })
+        .select(
+          "_id name email picture"
+        )
+        .limit(20);
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({
+      message:
+        error.message,
+    });
+  }
+};
+
 module.exports = {
   getUsers,
   updateProfile,
+  searchUsers,
 };

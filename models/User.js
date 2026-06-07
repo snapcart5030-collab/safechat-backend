@@ -5,12 +5,14 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       default: "",
+      index: true,
     },
 
     email: {
       type: String,
       required: true,
       unique: true,
+      index: true,
     },
 
     picture: {
@@ -22,6 +24,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
     fcmToken: {
       type: String,
       default: "",
@@ -32,4 +35,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model(
+  "User",
+  userSchema
+);

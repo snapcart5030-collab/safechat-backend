@@ -1,29 +1,38 @@
-  const express = require("express");
-  const upload = require("../config/upload");
+const express = require("express");
+const upload = require("../config/upload");
 
-  const router =
-    express.Router();
+const router =
+  express.Router();
 
-  const {
-    getUsers,
-    updateProfile,
-  } = require(
-    "../controllers/userController"
-  );
+const {
+  getUsers,
+  updateProfile,
+  searchUsers,
+} = require(
+  "../controllers/userController"
+);
 
-  router.get("/", getUsers);
-  router.put(
-    "/update-profile",
-    updateProfile
-  );
-  router.put(
+router.get("/", getUsers);
+
+router.get(
+  "/search",
+  searchUsers
+);
+
+router.put(
+  "/update-profile",
+  updateProfile
+);
+
+router.put(
   "/upload-profile",
   upload.single("image"),
   async (req, res) => {
     res.json({
-      imageUrl: req.file.path,
+      imageUrl:
+        req.file.path,
     });
   }
 );
 
-  module.exports = router;
+module.exports = router;
