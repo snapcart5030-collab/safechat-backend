@@ -5,33 +5,40 @@ const sendNotification = async (
   title,
   body
 ) => {
-   console.log("FCM FUNCTION CALLED");
+  console.log("FCM FUNCTION CALLED");
+
   try {
     const message = {
       token,
+
       notification: {
         title,
         body,
       },
+
       webpush: {
+        fcmOptions: {
+          link: "https://safeechats.web.app",
+        },
+
         notification: {
-          icon:
-            "/pwa-192x192.png",
+          icon: "/pwa-192x192.png",
         },
       },
     };
-
-
-
 
     const response =
       await admin
         .messaging()
         .send(message);
-  console.log("FCM SENT SUCCESS:", response);
+
+    console.log(
+      "FCM SENT SUCCESS:",
+      response
+    );
   } catch (error) {
     console.log(
-      "Notification Error",
+      "Notification Error:",
       error
     );
   }
