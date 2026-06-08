@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 
+
 const sendFollowRequest = async (req, res) => {
   try {
     const { senderId, receiverId } = req.body;
@@ -43,17 +44,30 @@ const sendFollowRequest = async (req, res) => {
     receiver.followRequests.push(senderId);
     await receiver.save();
 
-    await Notification.create({
-      sender: senderId,
-      receiver: receiverId,
-      type: "follow_request",
-      message: `${sender.name} sent you a follow request`,
-    });
+await Notification.create({
+  sender: senderId,
+  receiver: receiverId,
+  type: "follow_request",
+  message: `${sender.name} sent you a follow request`,
+});
 
-    global.io.to(receiverId).emit("newFollowRequest", {
-      senderId,
-      senderName: sender.name,
-    });
+global.io.to(receiverId).emit(
+  "newNotification",
+  {
+    senderName: sender.name,
+    type: "follow_request",
+    message: `${sender.name} sent you a follow request`,
+    createdAt: new Date(),
+  }
+);
+
+global.io.to(receiverId).emit(
+  "newFollowRequest",
+  {
+    senderId,
+    senderName: sender.name,
+  }
+);
 
     res.json({
       success: true,
@@ -106,6 +120,23 @@ const acceptFollowRequest = async (req, res) => {
     await currentUser.save();
     await requester.save();
 
+    await Notification.create({
+  sender: currentUserId,
+  receiver: requesterId,
+  type: "request_accepted",
+  message: `${currentUser.name} accepted your follow request`,
+});
+
+global.io.to(requesterId).emit(
+  "newNotification",
+  {
+    senderName: currentUser.name,
+    type: "request_accepted",
+    message: `${currentUser.name} accepted your follow request`,
+    createdAt: new Date(),
+  }
+);
+
     // Emit to both users
     global.io.to(requesterId).emit("followAccepted", {
       acceptedBy: currentUserId,
@@ -138,6 +169,26 @@ const rejectFollowRequest = async (req, res) => {
     );
 
     await currentUser.save();
+
+    const requester =
+  await User.findById(requesterId);
+
+await Notification.create({
+  sender: currentUserId,
+  receiver: requesterId,
+  type: "request_rejected",
+  message: `${currentUser.name} rejected your follow request`,
+});
+
+global.io.to(requesterId).emit(
+  "newNotification",
+  {
+    senderName: currentUser.name,
+    type: "request_rejected",
+    message: `${currentUser.name} rejected your follow request`,
+    createdAt: new Date(),
+  }
+);
 
     res.json({
       success: true,
