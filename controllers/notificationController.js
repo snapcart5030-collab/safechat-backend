@@ -27,6 +27,36 @@ const getNotifications = async (
   }
 };
 
+
+const markNotificationsRead =
+  async (req, res) => {
+    try {
+      const { userId } = req.body;
+
+      await Notification.updateMany(
+        {
+          receiver: userId,
+          isRead: false,
+        },
+        {
+          $set: {
+            isRead: true,
+          },
+        }
+      );
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  };
+
+
 module.exports = {
   getNotifications,
+  markNotificationsRead,
 };
