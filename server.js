@@ -15,6 +15,7 @@ const messageRoutes = require("./routes/messageRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const fcmRoutes = require("./routes/fcmRoutes");
 const followRoutes = require("./routes/followRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -47,6 +48,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/fcm", fcmRoutes);
 app.use("/api/follow", followRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // ================= SOCKET.IO =================
 // ================= SOCKET.IO =================

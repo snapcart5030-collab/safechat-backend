@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const Notification = require("../models/Notification");
 
 const sendFollowRequest = async (req, res) => {
   try {
@@ -41,6 +42,13 @@ const sendFollowRequest = async (req, res) => {
 
     receiver.followRequests.push(senderId);
     await receiver.save();
+
+    await Notification.create({
+      sender: senderId,
+      receiver: receiverId,
+      type: "follow_request",
+      message: `${sender.name} sent you a follow request`,
+    });
 
     global.io.to(receiverId).emit("newFollowRequest", {
       senderId,
