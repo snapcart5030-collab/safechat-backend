@@ -49,6 +49,7 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/fcm", fcmRoutes);
 app.use("/api/follow", followRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/uploads", express.static("uploads"));
 
 // ================= ONLINE USERS TRACKING =================
 const onlineUsers = new Map(); // Store userId -> socketId mapping
