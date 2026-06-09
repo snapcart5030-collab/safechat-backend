@@ -8,6 +8,9 @@ const {
   getAcceptedUsers,
   getFollowers,
   getAllConnections,
+  unfollowUser,
+  checkFollowingStatus,
+  getMutualFriends,
 } = require("../controllers/followController");
 
 // Send follow request
@@ -30,5 +33,14 @@ router.get("/followers/:userId", getFollowers);
 
 // Get all connections (mutual + following + followers)
 router.get("/connections/:userId", getAllConnections);
+
+// Unfollow a user
+router.post("/unfollow", unfollowUser);
+
+// Check if following a user
+router.get("/status/:currentUserId/:targetUserId", checkFollowingStatus);
+
+// Get mutual friends
+router.get("/mutual/:userId", getMutualFriends);
 
 module.exports = router;
