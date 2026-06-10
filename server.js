@@ -88,6 +88,18 @@ io.on("connection", (socket) => {
     });
   });
 
+  // Profile Viewed
+socket.on("profileViewed", (data) => {
+  console.log("👁️ Profile Viewed:", data);
+
+  io.to(data.profileOwnerId).emit("profileViewedNotification", {
+    viewerId: data.viewerId,
+    viewerName: data.viewerName,
+    message: `${data.viewerName} viewed your profile`,
+    createdAt: new Date(),
+  });
+});
+
   // Typing Start
   socket.on("typing", (data) => {
     console.log("Typing Event:", data);
