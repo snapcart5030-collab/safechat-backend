@@ -88,23 +88,38 @@ io.on("connection", (socket) => {
     });
   });
 
-socket.on("profileViewed", (data) => {
+  socket.on("profileViewed", (data) => {
+    if (data.viewerId === data.profileOwnerId) return;
 
-  if (data.viewerId === data.profileOwnerId) return;
-
-  io.to(data.profileOwnerId).emit("newNotification", {
-    sender: {
-      _id: data.viewerId,
-      name: data.viewerName,
-      picture: data.viewerPicture || "",
-    },
-    senderName: data.viewerName,
-    message: `${data.viewerName} viewed your profile`,
-    type: "profile_view",
-    createdAt: new Date(),
+    io.to(data.profileOwnerId).emit("newNotification", {
+      sender: {
+        _id: data.viewerId,
+        name: data.viewerName,
+        picture: data.viewerPicture || "",
+      },
+      senderName: data.viewerName,
+      message: `${data.viewerName} viewed your profile`,
+      type: "profile_view",
+      createdAt: new Date(),
+    });
   });
 
-});
+  // NEW: User seen chat notification
+  socket.on("userSeenChat", (data) => {
+    if (data.viewerId === data.profileOwnerId) return;
+
+    io.to(data.profileOwnerId).emit("newNotification", {
+      sender: {
+        _id: data.viewerId,
+        name: data.viewerName,
+        picture: data.viewerPicture || "",
+      },
+      senderName: data.viewerName,
+      message: `${data.viewerName} seen your chat`,
+      type: "chat_seen",
+      createdAt: new Date(),
+    });
+  });
 
   // Typing Start
   socket.on("typing", (data) => {
