@@ -53,139 +53,7 @@ app.use("/uploads", express.static("uploads"));
 
 // ================= ONLINE USERS TRACKING =================
 const onlineUsers = new Map(); // Store userId -> socketId mapping
-
-
-  // ========== VOICE CALL SIGNALING ==========
-  // Handle voice call request
-  socket.on("voice-call-request", (data) => {
-    const { callerId, receiverId, callerName, receiverName, callId } = data;
-    
-    console.log(`📞 Voice call request from ${callerName} to ${receiverName}`);
-    
-    // Store call information
-    const receiverSocketId = onlineUsers.get(receiverId);
-    
-    if (!receiverSocketId) {
-      // User is offline
-      socket.emit("voice-call-user-offline", { receiverId });
-      return;
-    }
-    
-    activeVoiceCalls.set(callId, {
-      callerId,
-      receiverId,
-      callerSocketId: socket.id,
-      receiverSocketId,
-      status: "calling",
-      startTime: new Date()
-    });
-    
-    // Emit incoming call to receiver
-    io.to(receiverSocketId).emit("incoming-voice-call", {
-      callId,
-      callerId,
-      receiverId,
-      callerName,
-      receiverName,
-      callerSocketId: socket.id
-    });
-  });
-  
-  // Handle accept voice call
-  socket.on("accept-voice-call", (data) => {
-    const { callId, callerId, receiverId, callerSocketId } = data;
-    
-    console.log(`✅ Voice call accepted: ${callId}`);
-    
-    const call = activeVoiceCalls.get(callId);
-    if (call) {
-      call.status = "connected";
-      activeVoiceCalls.set(callId, call);
-    }
-    
-    // Notify caller that call is accepted
-    io.to(callerSocketId).emit("voice-call-accepted", {
-      callId,
-      callerId,
-      receiverId,
-      receiverSocketId: socket.id
-    });
-  });
-  
-  // Handle reject voice call
-  socket.on("reject-voice-call", (data) => {
-    const { callId, callerId, receiverId, callerSocketId } = data;
-    
-    console.log(`❌ Voice call rejected: ${callId}`);
-    
-    // Remove call from active calls
-    activeVoiceCalls.delete(callId);
-    
-    // Notify caller that call is rejected
-    io.to(callerSocketId).emit("voice-call-rejected", {
-      callId,
-      callerId,
-      receiverId
-    });
-  });
-  
-  // Handle WebRTC offer
-  socket.on("voice-call-offer", (data) => {
-    const { offer, targetSocketId, callId } = data;
-    
-    console.log(`📡 Sending WebRTC offer for call: ${callId}`);
-    
-    io.to(targetSocketId).emit("voice-call-offer", {
-      offer,
-      callId,
-      fromSocketId: socket.id
-    });
-  });
-  
-  // Handle WebRTC answer
-  socket.on("voice-call-answer", (data) => {
-    const { answer, targetSocketId, callId } = data;
-    
-    console.log(`📡 Sending WebRTC answer for call: ${callId}`);
-    
-    io.to(targetSocketId).emit("voice-call-answer", {
-      answer,
-      callId,
-      fromSocketId: socket.id
-    });
-  });
-  
-  // Handle ICE candidates
-  socket.on("voice-ice-candidate", (data) => {
-    const { candidate, targetSocketId, callId } = data;
-    
-    console.log(`🧊 Sending ICE candidate for call: ${callId}`);
-    
-    io.to(targetSocketId).emit("voice-ice-candidate", {
-      candidate,
-      callId,
-      fromSocketId: socket.id
-    });
-  });
-  
-  // Handle call end
-  socket.on("voice-call-ended", (data) => {
-    const { callId, callerId, receiverId } = data;
-    
-    console.log(`📞 Voice call ended: ${callId}`);
-    
-    const call = activeVoiceCalls.get(callId);
-    if (call) {
-      // Notify the other participant
-      if (call.callerSocketId) {
-        io.to(call.callerSocketId).emit("voice-call-ended-by-other", { callId });
-      }
-      if (call.receiverSocketId) {
-        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { callId });
-      }
-      activeVoiceCalls.delete(callId);
-    }
-  });
+const activeVoiceCalls = new Map(); // Store active calls
 
 // ================= SOCKET.IO =================
 io.on("connection", (socket) => {
@@ -268,6 +136,151 @@ io.on("connection", (socket) => {
     io.to(data.receiverId).emit("hideTyping");
   });
 
+  // ========== VOICE CALL SIGNALING ==========
+  console.log("🎙️ Setting up voice call listeners for socket:", socket.id);
+  
+  // Handle voice call request
+  socket.on("voice-call-request", (data) => {
+    const { callerId, receiverId, callerName, receiverName, callId } = data;
+    
+    console.log(`📞 Voice call request from ${callerName} to ${receiverName}`);
+    console.log(`Caller ID: ${callerId}, Receiver ID: ${receiverId}`);
+    
+    // Find receiver's socket ID
+    const receiverSocketId = onlineUsers.get(receiverId);
+    console.log(`Receiver socket ID: ${receiverSocketId}`);
+    
+    if (!receiverSocketId) {
+      // User is offline
+      console.log(`❌ User ${receiverId} is offline`);
+      socket.emit("voice-call-user-offline", { receiverId });
+      return;
+    }
+    
+    console.log(`✅ User ${receiverId} is online, sending call...`);
+    
+    activeVoiceCalls.set(callId, {
+      callerId,
+      receiverId,
+      callerSocketId: socket.id,
+      receiverSocketId,
+      status: "calling",
+      startTime: new Date()
+    });
+    
+    // Emit incoming call to receiver
+    io.to(receiverSocketId).emit("incoming-voice-call", {
+      callId,
+      callerId,
+      receiverId,
+      callerName,
+      receiverName,
+      callerSocketId: socket.id
+    });
+    
+    console.log(`✅ Incoming call sent to ${receiverName}`);
+  });
+  
+  // Handle accept voice call
+  socket.on("accept-voice-call", (data) => {
+    const { callId, callerId, receiverId, callerSocketId } = data;
+    
+    console.log(`✅ Voice call accepted: ${callId}`);
+    
+    const call = activeVoiceCalls.get(callId);
+    if (call) {
+      call.status = "connected";
+      activeVoiceCalls.set(callId, call);
+    }
+    
+    // Notify caller that call is accepted
+    io.to(callerSocketId).emit("voice-call-accepted", {
+      callId,
+      callerId,
+      receiverId,
+      receiverSocketId: socket.id
+    });
+    
+    console.log(`✅ Call accepted notification sent to caller`);
+  });
+  
+  // Handle reject voice call
+  socket.on("reject-voice-call", (data) => {
+    const { callId, callerId, receiverId, callerSocketId } = data;
+    
+    console.log(`❌ Voice call rejected: ${callId}`);
+    
+    // Remove call from active calls
+    activeVoiceCalls.delete(callId);
+    
+    // Notify caller that call is rejected
+    io.to(callerSocketId).emit("voice-call-rejected", {
+      callId,
+      callerId,
+      receiverId
+    });
+    
+    console.log(`❌ Call rejection sent to caller`);
+  });
+  
+  // Handle WebRTC offer
+  socket.on("voice-call-offer", (data) => {
+    const { offer, targetSocketId, callId } = data;
+    
+    console.log(`📡 Sending WebRTC offer for call: ${callId}`);
+    
+    io.to(targetSocketId).emit("voice-call-offer", {
+      offer,
+      callId,
+      fromSocketId: socket.id
+    });
+  });
+  
+  // Handle WebRTC answer
+  socket.on("voice-call-answer", (data) => {
+    const { answer, targetSocketId, callId } = data;
+    
+    console.log(`📡 Sending WebRTC answer for call: ${callId}`);
+    
+    io.to(targetSocketId).emit("voice-call-answer", {
+      answer,
+      callId,
+      fromSocketId: socket.id
+    });
+  });
+  
+  // Handle ICE candidates
+  socket.on("voice-ice-candidate", (data) => {
+    const { candidate, targetSocketId, callId } = data;
+    
+    console.log(`🧊 Sending ICE candidate for call: ${callId}`);
+    
+    io.to(targetSocketId).emit("voice-ice-candidate", {
+      candidate,
+      callId,
+      fromSocketId: socket.id
+    });
+  });
+  
+  // Handle call end
+  socket.on("voice-call-ended", (data) => {
+    const { callId, callerId, receiverId } = data;
+    
+    console.log(`📞 Voice call ended: ${callId}`);
+    
+    const call = activeVoiceCalls.get(callId);
+    if (call) {
+      // Notify the other participant
+      if (call.callerSocketId && call.callerSocketId !== socket.id) {
+        io.to(call.callerSocketId).emit("voice-call-ended-by-other", { callId });
+      }
+      if (call.receiverSocketId && call.receiverSocketId !== socket.id) {
+        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { callId });
+      }
+      activeVoiceCalls.delete(callId);
+    }
+  });
+
   // Handle disconnect
   socket.on("disconnect", () => {
     console.log("❌ User Disconnected:", socket.id);
@@ -345,4 +358,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Server Running On Port ${PORT}`);
   console.log(`📡 WebSocket Server Ready`);
   console.log(`👥 Online users tracking active`);
+  console.log(`🎙️ Voice call system ready`);
 });
