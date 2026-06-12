@@ -16,6 +16,7 @@ const aiRoutes = require("./routes/aiRoutes");
 const fcmRoutes = require("./routes/fcmRoutes");
 const followRoutes = require("./routes/followRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const chatCustomizationRoutes = require('./routes/chatCustomizationRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -50,6 +51,7 @@ app.use("/api/fcm", fcmRoutes);
 app.use("/api/follow", followRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/uploads", express.static("uploads"));
+app.use('/api/chat-customization', chatCustomizationRoutes);
 
 // ================= ONLINE USERS TRACKING =================
 const onlineUsers = new Map(); // Store userId -> socketId mapping
