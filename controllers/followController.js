@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const sendNotification = require("../utils/sendNotification");
 
 const sendFollowRequest = async (req, res) => {
   try {
@@ -49,6 +50,15 @@ const sendFollowRequest = async (req, res) => {
       type: "follow_request",
       message: `${sender.name} sent you a follow request`,
     });
+
+
+    if (receiver.fcmToken) {
+  await sendNotification(
+    receiver.fcmToken,
+    "New Follow Request",
+    `${sender.name} sent you a follow request`
+  );
+}
 
     if (global.io) {
       global.io.to(receiverId).emit("newNotification", {
@@ -123,6 +133,14 @@ const acceptFollowRequest = async (req, res) => {
       message: `${currentUser.name} accepted your follow request`,
     });
 
+    if (requester.fcmToken) {
+  await sendNotification(
+    requester.fcmToken,
+    "Follow Request Accepted",
+    `${currentUser.name} accepted your follow request`
+  );
+}
+
     if (global.io) {
       global.io.to(requesterId).emit("newNotification", {
         senderName: currentUser.name,
@@ -174,6 +192,14 @@ const rejectFollowRequest = async (req, res) => {
       type: "request_rejected",
       message: `${currentUser.name} rejected your follow request`,
     });
+
+    if (requester.fcmToken) {
+  await sendNotification(
+    requester.fcmToken,
+    "Follow Request Rejected",
+    `${currentUser.name} rejected your follow request`
+  );
+}
 
     if (global.io) {
       global.io.to(requesterId).emit("newNotification", {
