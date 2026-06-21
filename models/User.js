@@ -29,7 +29,17 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    aiUsage: {
+      count: {
+        type: Number,
+        default: 0,
+      },
 
+      resetAt: {
+        type: Date,
+        default: null,
+      },
+    },
     // FOLLOWERS
     followers: [
       {
