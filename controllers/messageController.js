@@ -139,7 +139,39 @@ const getMessages = async (
   }
 };
 
+
+const markRead = async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.body;
+
+    const messages = await Message.find({
+      senderId,
+      receiverId,
+      isRead: false,
+    });
+
+    for (const msg of messages) {
+      msg.isRead = true;
+      msg.readAt = new Date();
+      msg.autoDeleteAt = new Date(
+        Date.now() + 5000
+      );
+
+      await msg.save();
+    }
+
+    res.json({
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
+  markRead
 };

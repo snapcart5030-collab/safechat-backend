@@ -6,6 +6,7 @@ const router =
 const {
   sendMessage,
   getMessages,
+   markRead
 } = require(
   "../controllers/messageController"
 );
@@ -18,6 +19,11 @@ router.post(
 router.get(
   "/:senderId/:receiverId",
   getMessages
+);
+
+router.post(
+  "/mark-read",
+  markRead
 );
 
 module.exports = router;

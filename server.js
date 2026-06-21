@@ -17,6 +17,7 @@ const fcmRoutes = require("./routes/fcmRoutes");
 const followRoutes = require("./routes/followRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatCustomizationRoutes = require('./routes/chatCustomizationRoutes');
+const Message = require("./models/Message");
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +30,55 @@ const io = new Server(server, {
 });
 
 global.io = io;
+
+
+// AUTO DELETE READ MESSAGES AFTER 5 SECONDS
+
+setInterval(async () => {
+  try {
+    const now = new Date();
+
+    const messages =
+      await Message.find({
+        autoDeleteAt: {
+          $ne: null,
+          $lte: now,
+        },
+      });
+
+    for (const msg of messages) {
+      io.to(
+        msg.senderId.toString()
+      ).emit(
+        "messageDeleted",
+        msg._id
+      );
+
+      io.to(
+        msg.receiverId.toString()
+      ).emit(
+        "messageDeleted",
+        msg._id
+      );
+
+      await Message.findByIdAndDelete(
+        msg._id
+      );
+
+      console.log(
+        "Deleted Message:",
+        msg._id
+      );
+    }
+  } catch (err) {
+    console.log(
+      "Auto Delete Error:",
+      err.message
+    );
+  }
+}, 1000);
+
+
 
 // Database Connection
 connectDB();
