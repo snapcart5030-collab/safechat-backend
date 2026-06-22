@@ -1,29 +1,39 @@
 const express = require("express");
-
-const router =
-  express.Router();
+const router = express.Router();
 
 const {
   sendMessage,
   getMessages,
-   markRead
-} = require(
-  "../controllers/messageController"
-);
+  markRead,
+  getLastMessage,
+  getAllConversations,
+  markSeen,
+  getUnreadCount,
+  deleteMessage,
+} = require("../controllers/messageController");
 
-router.post(
-  "/send",
-  sendMessage
-);
+// Send a message
+router.post("/send", sendMessage);
 
-router.get(
-  "/:senderId/:receiverId",
-  getMessages
-);
+// Get messages between two users
+router.get("/:senderId/:receiverId", getMessages);
 
-router.post(
-  "/mark-read",
-  markRead
-);
+// Mark messages as read
+router.post("/mark-read", markRead);
+
+// Get last message between two users
+router.get("/last/:userId/:chatWithId", getLastMessage);
+
+// Get all conversations for a user with last messages
+router.get("/conversations/:userId", getAllConversations);
+
+// Mark messages as seen
+router.post("/mark-seen", markSeen);
+
+// Get unread message count
+router.get("/unread/:userId", getUnreadCount);
+
+// Delete a message
+router.delete("/:messageId", deleteMessage);
 
 module.exports = router;
