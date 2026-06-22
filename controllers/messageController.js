@@ -83,14 +83,6 @@ const sendMessage = async (
           newMessage
         );
 
-      if (senderId !== receiverId) {
-        global.io
-          .to(senderId)
-          .emit(
-            "receiveMessage",
-            newMessage
-          );
-      }
     }
 
     res.status(201).json(
