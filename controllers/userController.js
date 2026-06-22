@@ -103,47 +103,59 @@ const updateProfile = async (
   }
 };
 
-const searchUsers = async (
-  req,
-  res
-) => {
+
+
+const searchUsers = async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, currentUserId } = req.query;
 
     if (!q) {
       return res.json([]);
     }
 
-    const users =
-      await User.find({
-        $or: [
-          {
-            name: {
-              $regex: q,
-              $options: "i",
-            },
-          },
-          {
-            email: {
-              $regex: q,
-              $options: "i",
-            },
-          },
-        ],
-      })
-        .select(
-          "_id name email picture"
-        )
-        .limit(20);
+    const currentUser = await User.findById(currentUserId);
 
-    res.json(users);
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+      $or: [
+        {
+          name: {
+            $regex: q,
+            $options: "i",
+          },
+        },
+        {
+          email: {
+            $regex: q,
+            $options: "i",
+          },
+        },
+      ],
+    }).select("_id name email picture");
+
+    const usersWithStatus = users.map((user) => ({
+      ...user.toObject(),
+
+      isFollowing:
+        currentUser?.following?.some(
+          (id) => id.toString() === user._id.toString()
+        ) || false,
+
+      requestSent:
+        currentUser?.followRequests?.some(
+          (id) => id.toString() === user._id.toString()
+        ) || false,
+    }));
+
+    res.json(usersWithStatus);
   } catch (error) {
     res.status(500).json({
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };
+
+
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
