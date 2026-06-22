@@ -111,28 +111,25 @@ const activeVoiceCalls = new Map(); // Store active calls
 io.on("connection", (socket) => {
   console.log("User Connected:", socket.id);
 
-  // Join personal room and track online status
-  socket.on("join", (userId) => {
-    socket.join(userId);
-    
-    // Store online user
-    const previousSocketId = onlineUsers.get(userId);
-    if (previousSocketId && previousSocketId !== socket.id) {
-      // User had another connection, remove it
-      const previousSocket = io.sockets.sockets.get(previousSocketId);
-      if (previousSocket) {
-        previousSocket.leave(userId);
-      }
-    }
-    
-    onlineUsers.set(userId, socket.id);
-    
-    // Broadcast to all connected users that this user is online
-    socket.broadcast.emit("userOnline", userId);
-    
-    console.log(`✅ User Joined Room: ${userId}`);
-    console.log(`📊 Online Users (${onlineUsers.size}):`, Array.from(onlineUsers.keys()));
-  });
+socket.on("join", (userId) => {
+  socket.join(userId);
+
+  socket.userId = userId;
+
+  if (!onlineUsers.has(userId)) {
+    onlineUsers.set(userId, new Set());
+  }
+
+  onlineUsers.get(userId).add(socket.id);
+
+  io.emit("userOnline", userId);
+
+  console.log(`✅ User Joined Room: ${userId}`);
+  console.log(
+    `📊 Online Users (${onlineUsers.size}):`,
+    Array.from(onlineUsers.keys())
+  );
+});
 
   // Follow Accepted
   socket.on("acceptFollowRequest", (data) => {
@@ -333,28 +330,32 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle disconnect
-  socket.on("disconnect", () => {
-    console.log("❌ User Disconnected:", socket.id);
-    
-    // Find and remove disconnected user
-    let disconnectedUserId = null;
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        disconnectedUserId = userId;
-        onlineUsers.delete(userId);
-        break;
+ socket.on("disconnect", () => {
+  console.log("❌ User Disconnected:", socket.id);
+
+  if (socket.userId) {
+    const userSockets = onlineUsers.get(socket.userId);
+
+    if (userSockets) {
+      userSockets.delete(socket.id);
+
+      if (userSockets.size === 0) {
+        onlineUsers.delete(socket.userId);
+
+        io.emit("userOffline", socket.userId);
+
+        console.log(
+          `📴 User ${socket.userId} is offline`
+        );
       }
     }
-    
-    // Broadcast to all connected users that this user is offline
-    if (disconnectedUserId) {
-      socket.broadcast.emit("userOffline", disconnectedUserId);
-      console.log(`📴 User ${disconnectedUserId} is now offline`);
-    }
-    
-    console.log(`📊 Online Users (${onlineUsers.size}):`, Array.from(onlineUsers.keys()));
-  });
+  }
+
+  console.log(
+    `📊 Online Users (${onlineUsers.size}):`,
+    Array.from(onlineUsers.keys())
+  );
+});
 });
 // =============================================
 
@@ -369,6 +370,17 @@ app.get("/api/users/:id/status", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+
+
+const messages = await Message.find({
+  autoDeleteAt: {
+    $ne: null,
+    $lte: now,
+  },
+});
+
+console.log("Messages Ready For Delete:", messages.length);
 
 // Check multiple users status
 app.post("/api/users/status", (req, res) => {
