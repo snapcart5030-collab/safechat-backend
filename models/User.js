@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema(
     aiUsage: {
       count: {
         type: Number,
-        default: 0,
+        default: 0, 
       },
 
       resetAt: {
