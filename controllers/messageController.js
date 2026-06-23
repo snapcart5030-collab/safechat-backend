@@ -40,6 +40,7 @@ const sendMessage = async (req, res) => {
       message,
       seen: false,
       isRead: false,
+      delivered: false,
       createdAt: new Date(),
       autoDeleteAt: new Date(Date.now() + 30000), // 30 sec
     });
@@ -101,8 +102,10 @@ const markRead = async (req, res) => {
     const { senderId, receiverId } = req.body;
 
     const messages = await Message.find({
-      senderId,
-      receiverId,
+      $or: [
+        { senderId: senderId, receiverId: receiverId },
+        { senderId: receiverId, receiverId: senderId }
+      ],
       isRead: false,
     });
 
@@ -112,8 +115,18 @@ const markRead = async (req, res) => {
       await msg.save();
     }
 
+    // Emit read status update
+    if (global.io) {
+      global.io.to(senderId).emit("messagesRead", {
+        by: receiverId,
+        messages: messages.map(m => m._id)
+      });
+    }
+
     res.json({
       success: true,
+      message: "Messages marked as read",
+      readCount: messages.length
     });
   } catch (error) {
     res.status(500).json({
@@ -312,6 +325,47 @@ const deleteMessage = async (req, res) => {
   }
 };
 
+// NEW: Deliver offline messages when user comes online
+const deliverOfflineMessages = async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.body;
+
+    // Find all messages that were sent while receiver was offline
+    const messages = await Message.find({
+      senderId: senderId,
+      receiverId: receiverId,
+      isRead: false,
+      delivered: false
+    });
+
+    // Mark them as delivered
+    const deliveredMessages = [];
+    for (const msg of messages) {
+      msg.delivered = true;
+      await msg.save();
+      deliveredMessages.push(msg);
+    }
+
+    // Emit delivered messages via socket
+    if (global.io) {
+      deliveredMessages.forEach(msg => {
+        global.io.to(receiverId).emit("receiveMessage", msg);
+      });
+    }
+
+    res.json({
+      success: true,
+      deliveredMessages: deliveredMessages,
+      count: deliveredMessages.length
+    });
+  } catch (error) {
+    console.error("Error in deliverOfflineMessages:", error);
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -321,4 +375,5 @@ module.exports = {
   markSeen,
   getUnreadCount,
   deleteMessage,
+  deliverOfflineMessages, // Add this
 };

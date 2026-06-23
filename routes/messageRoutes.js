@@ -10,6 +10,7 @@ const {
   markSeen,
   getUnreadCount,
   deleteMessage,
+  deliverOfflineMessages, // Add this
 } = require("../controllers/messageController");
 
 // Send a message
@@ -35,5 +36,8 @@ router.get("/unread/:userId", getUnreadCount);
 
 // Delete a message
 router.delete("/:messageId", deleteMessage);
+
+// Deliver offline messages
+router.post("/deliver-offline", deliverOfflineMessages);
 
 module.exports = router;
