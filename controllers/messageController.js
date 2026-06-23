@@ -41,7 +41,7 @@ const sendMessage = async (req, res) => {
       seen: false,
       isRead: false,
       createdAt: new Date(),
-      autoDeleteAt: new Date(Date.now() + 30000), // 30 seconds
+      autoDeleteAt: new Date(Date.now() + 30000), // 30 sec
     });
 
     const receiverUser = await User.findById(receiverId);
