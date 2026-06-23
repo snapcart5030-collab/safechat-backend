@@ -31,54 +31,28 @@ const io = new Server(server, {
 
 global.io = io;
 
-
-// AUTO DELETE READ MESSAGES AFTER 5 SECONDS
-
+// AUTO DELETE READ MESSAGES AFTER 30 SECONDS
 setInterval(async () => {
   try {
     const now = new Date();
 
-    const messages =
-      await Message.find({
-        autoDeleteAt: {
-          $ne: null,
-          $lte: now,
-        },
-      });
+    const messages = await Message.find({
+      autoDeleteAt: {
+        $ne: null,
+        $lte: now,
+      },
+    });
 
     for (const msg of messages) {
-      io.to(
-        msg.senderId.toString()
-      ).emit(
-        "messageDeleted",
-        msg._id
-      );
-
-      io.to(
-        msg.receiverId.toString()
-      ).emit(
-        "messageDeleted",
-        msg._id
-      );
-
-      await Message.findByIdAndDelete(
-        msg._id
-      );
-
-      console.log(
-        "Deleted Message:",
-        msg._id
-      );
+      io.to(msg.senderId.toString()).emit("messageDeleted", msg._id);
+      io.to(msg.receiverId.toString()).emit("messageDeleted", msg._id);
+      await Message.findByIdAndDelete(msg._id);
+      console.log("Deleted Message:", msg._id);
     }
   } catch (err) {
-    console.log(
-      "Auto Delete Error:",
-      err.message
-    );
+    console.log("Auto Delete Error:", err.message);
   }
 }, 1000);
-
-
 
 // Database Connection
 connectDB();
@@ -111,25 +85,25 @@ const activeVoiceCalls = new Map(); // Store active calls
 io.on("connection", (socket) => {
   console.log("User Connected:", socket.id);
 
-socket.on("join", (userId) => {
-  socket.join(userId);
+  socket.on("join", (userId) => {
+    socket.join(userId);
 
-  socket.userId = userId;
+    socket.userId = userId;
 
-  if (!onlineUsers.has(userId)) {
-    onlineUsers.set(userId, new Set());
-  }
+    if (!onlineUsers.has(userId)) {
+      onlineUsers.set(userId, new Set());
+    }
 
-  onlineUsers.get(userId).add(socket.id);
+    onlineUsers.get(userId).add(socket.id);
 
-  io.emit("userOnline", userId);
+    io.emit("userOnline", userId);
 
-  console.log(`✅ User Joined Room: ${userId}`);
-  console.log(
-    `📊 Online Users (${onlineUsers.size}):`,
-    Array.from(onlineUsers.keys())
-  );
-});
+    console.log(`✅ User Joined Room: ${userId}`);
+    console.log(
+      `📊 Online Users (${onlineUsers.size}):`,
+      Array.from(onlineUsers.keys())
+    );
+  });
 
   // Follow Accepted
   socket.on("acceptFollowRequest", (data) => {
@@ -330,33 +304,34 @@ socket.on("join", (userId) => {
     }
   });
 
- socket.on("disconnect", () => {
-  console.log("❌ User Disconnected:", socket.id);
+  socket.on("disconnect", () => {
+    console.log("❌ User Disconnected:", socket.id);
 
-  if (socket.userId) {
-    const userSockets = onlineUsers.get(socket.userId);
+    if (socket.userId) {
+      const userSockets = onlineUsers.get(socket.userId);
 
-    if (userSockets) {
-      userSockets.delete(socket.id);
+      if (userSockets) {
+        userSockets.delete(socket.id);
 
-      if (userSockets.size === 0) {
-        onlineUsers.delete(socket.userId);
+        if (userSockets.size === 0) {
+          onlineUsers.delete(socket.userId);
 
-        io.emit("userOffline", socket.userId);
+          io.emit("userOffline", socket.userId);
 
-        console.log(
-          `📴 User ${socket.userId} is offline`
-        );
+          console.log(
+            `📴 User ${socket.userId} is offline`
+          );
+        }
       }
     }
-  }
 
-  console.log(
-    `📊 Online Users (${onlineUsers.size}):`,
-    Array.from(onlineUsers.keys())
-  );
+    console.log(
+      `📊 Online Users (${onlineUsers.size}):`,
+      Array.from(onlineUsers.keys())
+    );
+  });
 });
-});
+
 // =============================================
 
 // ================= ONLINE STATUS API ENDPOINTS =================
@@ -370,17 +345,6 @@ app.get("/api/users/:id/status", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-
-
-const messages = await Message.find({
-  autoDeleteAt: {
-    $ne: null,
-    $lte: now,
-  },
-});
-
-console.log("Messages Ready For Delete:", messages.length);
 
 // Check multiple users status
 app.post("/api/users/status", (req, res) => {
@@ -408,7 +372,55 @@ app.get("/api/users/online/all", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
 // =============================================
+
+// ================= DELIVER OFFLINE MESSAGES ENDPOINT =================
+app.post("/api/messages/deliver-offline", async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.body;
+
+    console.log(`📨 Delivering offline messages from: ${senderId} to: ${receiverId}`);
+
+    // Find all messages that were sent while receiver was offline
+    const messages = await Message.find({
+      senderId: senderId,
+      receiverId: receiverId,
+      isRead: false,
+      delivered: false
+    });
+
+    console.log(`📨 Found ${messages.length} offline messages to deliver`);
+
+    // Mark them as delivered
+    const deliveredMessages = [];
+    for (const msg of messages) {
+      msg.delivered = true;
+      await msg.save();
+      deliveredMessages.push(msg);
+    }
+
+    // Emit delivered messages via socket
+    if (global.io) {
+      deliveredMessages.forEach(msg => {
+        global.io.to(receiverId).emit("receiveMessage", msg);
+      });
+      console.log(`📨 Emitted ${deliveredMessages.length} messages via socket`);
+    }
+
+    res.json({
+      success: true,
+      deliveredMessages: deliveredMessages,
+      count: deliveredMessages.length
+    });
+  } catch (error) {
+    console.error("Error in deliverOfflineMessages:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
 
 console.log("All Systems Ready");
 

@@ -1,3 +1,4 @@
+// routes/messageRoutes.js
 const express = require("express");
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const {
   markSeen,
   getUnreadCount,
   deleteMessage,
-  deliverOfflineMessages, // Add this
+  deliverOfflineMessages,
 } = require("../controllers/messageController");
 
 // Send a message
