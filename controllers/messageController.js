@@ -41,6 +41,7 @@ const sendMessage = async (req, res) => {
       seen: false,
       isRead: false,
       createdAt: new Date(),
+      autoDeleteAt: new Date(Date.now() + 30000), // 30 seconds
     });
 
     const receiverUser = await User.findById(receiverId);
@@ -51,7 +52,7 @@ const sendMessage = async (req, res) => {
 
     if (global.io) {
       global.io.to(receiverId).emit("receiveMessage", newMessage);
-      
+
       // Emit to update chat list for both users
       global.io.to(senderId).emit("chatListUpdated", {
         userId: senderId,
@@ -59,7 +60,7 @@ const sendMessage = async (req, res) => {
         lastMessage: message,
         lastMessageTime: new Date(),
       });
-      
+
       global.io.to(receiverId).emit("chatListUpdated", {
         userId: receiverId,
         chatWith: senderId,
@@ -108,7 +109,6 @@ const markRead = async (req, res) => {
     for (const msg of messages) {
       msg.isRead = true;
       msg.readAt = new Date();
-      msg.autoDeleteAt = new Date(Date.now() + 5000);
       await msg.save();
     }
 
@@ -180,16 +180,16 @@ const getAllConversations = async (req, res) => {
 
     // Get unique chat partners
     const chatPartners = new Map();
-    
+
     messages.forEach((msg) => {
       const senderId = msg.senderId._id ? msg.senderId._id.toString() : msg.senderId.toString();
       const receiverId = msg.receiverId._id ? msg.receiverId._id.toString() : msg.receiverId.toString();
-      
+
       const partnerId = senderId === userId ? receiverId : senderId;
-      
+
       if (!chatPartners.has(partnerId)) {
         const partner = senderId === userId ? msg.receiverId : msg.senderId;
-        
+
         chatPartners.set(partnerId, {
           _id: partner._id || partner,
           name: partner.name || "Unknown",
@@ -277,7 +277,7 @@ const deleteMessage = async (req, res) => {
     const { userId } = req.body;
 
     const message = await Message.findById(messageId);
-    
+
     if (!message) {
       return res.status(404).json({
         success: false,
