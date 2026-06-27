@@ -18,6 +18,8 @@ const followRoutes = require("./routes/followRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatCustomizationRoutes = require('./routes/chatCustomizationRoutes');
 const Message = require("./models/Message");
+const liveLocationRoutes = require("./routes/liveLocationRoutes");
+
 
 const app = express();
 const server = http.createServer(app);
@@ -76,10 +78,13 @@ app.use("/api/follow", followRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/uploads", express.static("uploads"));
 app.use('/api/chat-customization', chatCustomizationRoutes);
+app.use("/api/location", liveLocationRoutes);
 
 // ================= ONLINE USERS TRACKING =================
-const onlineUsers = new Map(); // Store userId -> socketId mapping
+const onlineUsers = new Map(); // Store userId -> Set of socketIds
+const userSocketMap = new Map(); // Store socketId -> userId for quick lookup
 const activeVoiceCalls = new Map(); // Store active calls
+const activeLocationSharing = new Map();
 
 // ================= SOCKET.IO =================
 io.on("connection", (socket) => {
@@ -87,8 +92,10 @@ io.on("connection", (socket) => {
 
   socket.on("join", (userId) => {
     socket.join(userId);
-
     socket.userId = userId;
+    
+    // Store socket to user mapping
+    userSocketMap.set(socket.id, userId);
 
     if (!onlineUsers.has(userId)) {
       onlineUsers.set(userId, new Set());
@@ -162,58 +169,63 @@ io.on("connection", (socket) => {
   // ========== VOICE CALL SIGNALING ==========
   console.log("🎙️ Setting up voice call listeners for socket:", socket.id);
 
-  // Handle voice call request
+  // Handle voice call request - User A calls User B
   socket.on("voice-call-request", (data) => {
-    const { callerId, receiverId, callerName, receiverName, callId } = data;
+    const { callId, callerId, receiverId, callerName, receiverName } = data;
 
-    console.log(`📞 Voice call request from ${callerName} to ${receiverName}`);
-    console.log(`Caller ID: ${callerId}, Receiver ID: ${receiverId}`);
+    console.log(`📞 Voice call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
 
+    // Check if receiver is online
     const receiverSockets = onlineUsers.get(receiverId);
 
     if (!receiverSockets || receiverSockets.size === 0) {
       console.log(`❌ User ${receiverId} is offline`);
-      socket.emit("voice-call-user-offline", { receiverId });
+      socket.emit("voice-call-user-offline", { 
+        receiverId,
+        message: "User is offline"
+      });
       return;
     }
 
+    // Get first socket of receiver
     const receiverSocketId = [...receiverSockets][0];
 
-    console.log("Receiver Socket:", receiverSocketId);
-
-    console.log(`✅ User ${receiverId} is online, sending call...`);
-
+    // Store call info with both socket IDs
     activeVoiceCalls.set(callId, {
       callerId,
       receiverId,
+      callerName,
+      receiverName,
       callerSocketId: socket.id,
-      receiverSocketId,
+      receiverSocketId: receiverSocketId,
       status: "calling",
       startTime: new Date()
     });
-console.log("Sending call to socket:", receiverSocketId);
-    // Emit incoming call to receiver
+
+    // Send incoming call to receiver
     io.to(receiverSocketId).emit("incoming-voice-call", {
       callId,
       callerId,
       receiverId,
       callerName,
       receiverName,
-      callerSocketId: socket.id
+      callerSocketId: socket.id,
+      receiverSocketId: receiverSocketId
     });
 
-    console.log(`✅ Incoming call sent to ${receiverName}`);
+    console.log(`✅ Incoming call sent to ${receiverName} (${receiverSocketId})`);
   });
 
-  // Handle accept voice call
+  // Handle accept voice call - User B accepts call from User A
   socket.on("accept-voice-call", (data) => {
     const { callId, callerId, receiverId, callerSocketId } = data;
 
-    console.log(`✅ Voice call accepted: ${callId}`);
+    console.log(`✅ Voice call accepted: ${callId} by ${receiverId}`);
 
     const call = activeVoiceCalls.get(callId);
     if (call) {
       call.status = "connected";
+      call.receiverSocketId = socket.id; // Update with actual socket
       activeVoiceCalls.set(callId, call);
     }
 
@@ -225,14 +237,14 @@ console.log("Sending call to socket:", receiverSocketId);
       receiverSocketId: socket.id
     });
 
-    console.log(`✅ Call accepted notification sent to caller`);
+    console.log(`✅ Call accepted notification sent to caller (${callerSocketId})`);
   });
 
-  // Handle reject voice call
+  // Handle reject voice call - User B rejects call from User A
   socket.on("reject-voice-call", (data) => {
     const { callId, callerId, receiverId, callerSocketId } = data;
 
-    console.log(`❌ Voice call rejected: ${callId}`);
+    console.log(`❌ Voice call rejected: ${callId} by ${receiverId}`);
 
     // Remove call from active calls
     activeVoiceCalls.delete(callId);
@@ -241,17 +253,18 @@ console.log("Sending call to socket:", receiverSocketId);
     io.to(callerSocketId).emit("voice-call-rejected", {
       callId,
       callerId,
-      receiverId
+      receiverId,
+      message: "Call rejected"
     });
 
-    console.log(`❌ Call rejection sent to caller`);
+    console.log(`❌ Call rejection sent to caller (${callerSocketId})`);
   });
 
-  // Handle WebRTC offer
+  // Handle WebRTC offer - Caller sends offer to Receiver
   socket.on("voice-call-offer", (data) => {
     const { offer, targetSocketId, callId } = data;
 
-    console.log(`📡 Sending WebRTC offer for call: ${callId}`);
+    console.log(`📡 Sending WebRTC offer for call: ${callId} to ${targetSocketId}`);
 
     io.to(targetSocketId).emit("voice-call-offer", {
       offer,
@@ -260,11 +273,11 @@ console.log("Sending call to socket:", receiverSocketId);
     });
   });
 
-  // Handle WebRTC answer
+  // Handle WebRTC answer - Receiver sends answer to Caller
   socket.on("voice-call-answer", (data) => {
     const { answer, targetSocketId, callId } = data;
 
-    console.log(`📡 Sending WebRTC answer for call: ${callId}`);
+    console.log(`📡 Sending WebRTC answer for call: ${callId} to ${targetSocketId}`);
 
     io.to(targetSocketId).emit("voice-call-answer", {
       answer,
@@ -277,7 +290,7 @@ console.log("Sending call to socket:", receiverSocketId);
   socket.on("voice-ice-candidate", (data) => {
     const { candidate, targetSocketId, callId } = data;
 
-    console.log(`🧊 Sending ICE candidate for call: ${callId}`);
+    console.log(`🧊 Sending ICE candidate for call: ${callId} to ${targetSocketId}`);
 
     io.to(targetSocketId).emit("voice-ice-candidate", {
       candidate,
@@ -296,33 +309,114 @@ console.log("Sending call to socket:", receiverSocketId);
     if (call) {
       // Notify the other participant
       if (call.callerSocketId && call.callerSocketId !== socket.id) {
-        io.to(call.callerSocketId).emit("voice-call-ended-by-other", { callId });
+        io.to(call.callerSocketId).emit("voice-call-ended-by-other", { 
+          callId,
+          endedBy: socket.userId
+        });
       }
       if (call.receiverSocketId && call.receiverSocketId !== socket.id) {
-        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { callId });
+        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { 
+          callId,
+          endedBy: socket.userId
+        });
       }
       activeVoiceCalls.delete(callId);
     }
   });
 
+
+
+
+  // ================= LOCATION SHARING =================
+
+// Send request
+socket.on("share-location-request", (data) => {
+
+  io.to(data.receiverId).emit(
+    "incoming-location-request",
+    data
+  );
+
+});
+
+// Accept
+socket.on("accept-location", (data) => {
+
+  activeLocationSharing.set(data.shareId, {
+    senderId: data.senderId,
+    receiverId: data.receiverId,
+    startedAt: new Date()
+  });
+
+  io.to(data.senderId).emit(
+    "location-accepted",
+    data
+  );
+
+});
+
+// Reject
+socket.on("reject-location", (data) => {
+
+  io.to(data.senderId).emit(
+    "location-rejected",
+    data
+  );
+
+});
+
+// Live Location Update
+socket.on("location-update", (data) => {
+
+  io.to(data.receiverId).emit(
+    "receive-location",
+    data
+  );
+
+});
+
+// Stop Sharing
+socket.on("stop-location-sharing", (data) => {
+
+  activeLocationSharing.delete(data.shareId);
+
+  io.to(data.receiverId).emit(
+    "location-stopped",
+    data
+  );
+
+});
+
+  // ========== DISCONNECT HANDLING ==========
   socket.on("disconnect", () => {
     console.log("❌ User Disconnected:", socket.id);
 
-    if (socket.userId) {
-      const userSockets = onlineUsers.get(socket.userId);
-
+    const userId = userSocketMap.get(socket.id);
+    if (userId) {
+      const userSockets = onlineUsers.get(userId);
       if (userSockets) {
         userSockets.delete(socket.id);
-
         if (userSockets.size === 0) {
-          onlineUsers.delete(socket.userId);
-
-          io.emit("userOffline", socket.userId);
-
-          console.log(
-            `📴 User ${socket.userId} is offline`
-          );
+          onlineUsers.delete(userId);
+          io.emit("userOffline", userId);
+          console.log(`📴 User ${userId} is offline`);
         }
+      }
+      userSocketMap.delete(socket.id);
+    }
+
+    // Clean up any active calls for this socket
+    for (const [callId, call] of activeVoiceCalls) {
+      if (call.callerSocketId === socket.id || call.receiverSocketId === socket.id) {
+        const otherSocketId = call.callerSocketId === socket.id ? call.receiverSocketId : call.callerSocketId;
+        if (otherSocketId) {
+          io.to(otherSocketId).emit("voice-call-ended-by-other", {
+            callId,
+            endedBy: userId || "unknown"
+          });
+        }
+        activeVoiceCalls.delete(callId);
+        console.log(`🧹 Cleaned up call ${callId} due to disconnect`);
       }
     }
 
@@ -331,6 +425,7 @@ console.log("Sending call to socket:", receiverSocketId);
       Array.from(onlineUsers.keys())
     );
   });
+  
 });
 
 // =============================================
