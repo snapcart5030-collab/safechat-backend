@@ -330,6 +330,13 @@ io.on("connection", (socket) => {
   // ================= LOCATION SHARING =================
 
 // Send request
+
+
+socket.on("join-location-room", ({ requestId }) => {
+  console.log("📍 Joined Location Room:", requestId);
+  socket.join(requestId);
+});
+
 socket.on("share-location-request", (data) => {
 
   io.to(data.receiverId).emit(
@@ -365,23 +372,15 @@ socket.on("reject-location", (data) => {
 
 });
 
-// Live Location Update
-socket.on("location-update", (data) => {
 
-  io.to(data.receiverId).emit(
-    "receive-location",
-    data
-  );
-
-});
 
 // Stop Sharing
 socket.on("stop-location-sharing", (data) => {
 
-  activeLocationSharing.delete(data.shareId);
+  activeLocationSharing.delete(data.requestId);
 
-  io.to(data.receiverId).emit(
-    "location-stopped",
+  io.to(data.requestId).emit(
+    "location-sharing-stopped",
     data
   );
 
