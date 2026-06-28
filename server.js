@@ -268,14 +268,17 @@ io.on("connection", (socket) => {
     console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
     // Try to get the target socket ID from the call if not provided
-    let targetId = targetSocketId;
-    if (!targetId) {
-      const call = activeVoiceCalls.get(callId);
-      if (call) {
-        targetId = call.receiverSocketId || targetSocketId;
-        console.log(`📡 Using receiver socket from call: ${targetId}`);
-      }
-    }
+   const call = activeVoiceCalls.get(callId);
+
+if (!call) return;
+
+let targetId;
+
+if (socket.id === call.callerSocketId) {
+    targetId = call.receiverSocketId;
+} else {
+    targetId = call.callerSocketId;
+}
 
     if (!targetId) {
       console.error(`❌ No target socket found for call ${callId}`);
@@ -306,14 +309,14 @@ io.on("connection", (socket) => {
     console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
     // Try to get the target socket ID from the call if not provided
-    let targetId = targetSocketId;
-    if (!targetId) {
-      const call = activeVoiceCalls.get(callId);
-      if (call) {
-        targetId = call.callerSocketId || targetSocketId;
-        console.log(`📡 Using caller socket from call: ${targetId}`);
-      }
-    }
+  const call = activeVoiceCalls.get(callId);
+
+if (!call) {
+    console.log("❌ Call not found:", callId);
+    return;
+}
+
+const targetId = call.receiverSocketId;
 
     if (!targetId) {
       console.error(`❌ No target socket found for call ${callId}`);
@@ -343,19 +346,14 @@ io.on("connection", (socket) => {
     console.log(`🧊 Sending ICE candidate for call: ${callId} to targetSocket: ${targetSocketId}`);
 
     // Try to get the target socket ID from the call if not provided
-    let targetId = targetSocketId;
-    if (!targetId) {
-      const call = activeVoiceCalls.get(callId);
-      if (call) {
-        // Determine which socket to send to based on who sent the candidate
-        if (socket.id === call.callerSocketId) {
-          targetId = call.receiverSocketId;
-        } else if (socket.id === call.receiverSocketId) {
-          targetId = call.callerSocketId;
-        }
-        console.log(`🧊 Using target socket from call: ${targetId}`);
-      }
-    }
+    const call = activeVoiceCalls.get(callId);
+
+if (!call) {
+    console.log("❌ Call not found:", callId);
+    return;
+}
+
+const targetId = call.callerSocketId;
 
     if (!targetId) {
       console.error(`❌ No target socket found for ICE candidate ${callId}`);
