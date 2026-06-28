@@ -262,44 +262,119 @@ io.on("connection", (socket) => {
 
   // Handle WebRTC offer - Caller sends offer to Receiver
   socket.on("voice-call-offer", (data) => {
-    const { offer, targetSocketId, callId } = data;
+    const { offer, targetSocketId, callId, callerId, receiverId } = data;
 
-    console.log(`📡 Sending WebRTC offer for call: ${callId} to ${targetSocketId}`);
+    console.log(`📡 Sending WebRTC offer for call: ${callId} to targetSocket: ${targetSocketId}`);
+    console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
-    io.to(targetSocketId).emit("voice-call-offer", {
+    // Try to get the target socket ID from the call if not provided
+    let targetId = targetSocketId;
+    if (!targetId) {
+      const call = activeVoiceCalls.get(callId);
+      if (call) {
+        targetId = call.receiverSocketId || targetSocketId;
+        console.log(`📡 Using receiver socket from call: ${targetId}`);
+      }
+    }
+
+    if (!targetId) {
+      console.error(`❌ No target socket found for call ${callId}`);
+      socket.emit("voice-call-error", {
+        callId,
+        message: "Target socket not found"
+      });
+      return;
+    }
+
+    // Send offer to target
+    io.to(targetId).emit("voice-call-offer", {
       offer,
       callId,
+      callerId,
+      receiverId,
       fromSocketId: socket.id
     });
+
+    console.log(`✅ Offer sent to socket: ${targetId}`);
   });
 
   // Handle WebRTC answer - Receiver sends answer to Caller
   socket.on("voice-call-answer", (data) => {
-    const { answer, targetSocketId, callId } = data;
+    const { answer, targetSocketId, callId, callerId, receiverId } = data;
 
-    console.log(`📡 Sending WebRTC answer for call: ${callId} to ${targetSocketId}`);
+    console.log(`📡 Sending WebRTC answer for call: ${callId} to targetSocket: ${targetSocketId}`);
+    console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
-    io.to(targetSocketId).emit("voice-call-answer", {
+    // Try to get the target socket ID from the call if not provided
+    let targetId = targetSocketId;
+    if (!targetId) {
+      const call = activeVoiceCalls.get(callId);
+      if (call) {
+        targetId = call.callerSocketId || targetSocketId;
+        console.log(`📡 Using caller socket from call: ${targetId}`);
+      }
+    }
+
+    if (!targetId) {
+      console.error(`❌ No target socket found for call ${callId}`);
+      socket.emit("voice-call-error", {
+        callId,
+        message: "Target socket not found"
+      });
+      return;
+    }
+
+    // Send answer to target
+    io.to(targetId).emit("voice-call-answer", {
       answer,
       callId,
+      callerId,
+      receiverId,
       fromSocketId: socket.id
     });
+
+    console.log(`✅ Answer sent to socket: ${targetId}`);
   });
 
-  // Handle ICE candidates
+  // Handle ICE candidates with improved error handling
   socket.on("voice-ice-candidate", (data) => {
-    const { candidate, targetSocketId, callId } = data;
+    const { candidate, targetSocketId, callId, callerId, receiverId } = data;
 
-    console.log(`🧊 Sending ICE candidate for call: ${callId} to ${targetSocketId}`);
+    console.log(`🧊 Sending ICE candidate for call: ${callId} to targetSocket: ${targetSocketId}`);
 
-    io.to(targetSocketId).emit("voice-ice-candidate", {
+    // Try to get the target socket ID from the call if not provided
+    let targetId = targetSocketId;
+    if (!targetId) {
+      const call = activeVoiceCalls.get(callId);
+      if (call) {
+        // Determine which socket to send to based on who sent the candidate
+        if (socket.id === call.callerSocketId) {
+          targetId = call.receiverSocketId;
+        } else if (socket.id === call.receiverSocketId) {
+          targetId = call.callerSocketId;
+        }
+        console.log(`🧊 Using target socket from call: ${targetId}`);
+      }
+    }
+
+    if (!targetId) {
+      console.error(`❌ No target socket found for ICE candidate ${callId}`);
+      return;
+    }
+
+    // Send ICE candidate to target
+    io.to(targetId).emit("voice-ice-candidate", {
       candidate,
       callId,
+      callerId,
+      receiverId,
       fromSocketId: socket.id
     });
+
+    console.log(`✅ ICE candidate sent to socket: ${targetId}`);
   });
 
-  // Handle call end
+  // Handle call end with proper cleanup
   socket.on("voice-call-ended", (data) => {
     const { callId, callerId, receiverId } = data;
 
@@ -311,80 +386,94 @@ io.on("connection", (socket) => {
       if (call.callerSocketId && call.callerSocketId !== socket.id) {
         io.to(call.callerSocketId).emit("voice-call-ended-by-other", { 
           callId,
-          endedBy: socket.userId
+          endedBy: socket.userId || "unknown"
         });
       }
       if (call.receiverSocketId && call.receiverSocketId !== socket.id) {
         io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { 
           callId,
-          endedBy: socket.userId
+          endedBy: socket.userId || "unknown"
         });
       }
       activeVoiceCalls.delete(callId);
+      console.log(`🧹 Call ${callId} cleaned up`);
+    } else {
+      // If call not found, broadcast to both participants
+      if (callerId) {
+        io.to(callerId).emit("voice-call-ended-by-other", { 
+          callId,
+          endedBy: socket.userId || "unknown"
+        });
+      }
+      if (receiverId) {
+        io.to(receiverId).emit("voice-call-ended-by-other", { 
+          callId,
+          endedBy: socket.userId || "unknown"
+        });
+      }
     }
   });
 
+  // Handle call busy
+  socket.on("voice-call-busy", (data) => {
+    const { callId, callerId, receiverId } = data;
+    console.log(`🔴 Voice call busy: ${callId}`);
 
+    // Notify caller that receiver is busy
+    io.to(callerId).emit("voice-call-busy", {
+      callId,
+      callerId,
+      receiverId,
+      message: "User is busy"
+    });
 
-
-  // ================= LOCATION SHARING =================
-
-// Send request
-
-
-socket.on("join-location-room", ({ requestId }) => {
-  console.log("📍 Joined Location Room:", requestId);
-  socket.join(requestId);
-});
-
-socket.on("share-location-request", (data) => {
-
-  io.to(data.receiverId).emit(
-    "incoming-location-request",
-    data
-  );
-
-});
-
-// Accept
-socket.on("accept-location", (data) => {
-
-  activeLocationSharing.set(data.shareId, {
-    senderId: data.senderId,
-    receiverId: data.receiverId,
-    startedAt: new Date()
+    // Clean up
+    activeVoiceCalls.delete(callId);
   });
 
-  io.to(data.senderId).emit(
-    "location-accepted",
-    data
-  );
+  // ================= LOCATION SHARING =================
+  socket.on("join-location-room", ({ requestId }) => {
+    console.log("📍 Joined Location Room:", requestId);
+    socket.join(requestId);
+  });
 
-});
+  socket.on("share-location-request", (data) => {
+    io.to(data.receiverId).emit(
+      "incoming-location-request",
+      data
+    );
+  });
 
-// Reject
-socket.on("reject-location", (data) => {
+  // Accept
+  socket.on("accept-location", (data) => {
+    activeLocationSharing.set(data.shareId, {
+      senderId: data.senderId,
+      receiverId: data.receiverId,
+      startedAt: new Date()
+    });
 
-  io.to(data.senderId).emit(
-    "location-rejected",
-    data
-  );
+    io.to(data.senderId).emit(
+      "location-accepted",
+      data
+    );
+  });
 
-});
+  // Reject
+  socket.on("reject-location", (data) => {
+    io.to(data.senderId).emit(
+      "location-rejected",
+      data
+    );
+  });
 
-
-
-// Stop Sharing
-socket.on("stop-location-sharing", (data) => {
-
-  activeLocationSharing.delete(data.requestId);
-
-  io.to(data.requestId).emit(
-    "location-sharing-stopped",
-    data
-  );
-
-});
+  // Stop Sharing
+  socket.on("stop-location-sharing", (data) => {
+    activeLocationSharing.delete(data.requestId);
+    io.to(data.requestId).emit(
+      "location-sharing-stopped",
+      data
+    );
+  });
 
   // ========== DISCONNECT HANDLING ==========
   socket.on("disconnect", () => {
