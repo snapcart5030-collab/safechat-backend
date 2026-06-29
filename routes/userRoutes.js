@@ -8,10 +8,19 @@ const {
   getUserById,  // Import the new function
   updateProfile,
   searchUsers,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
 } = require("../controllers/userController");
 
 router.get("/", getUsers);
 router.get("/search", searchUsers);
+router.post("/block", blockUser);
+
+router.post("/unblock", unblockUser);
+
+router.get("/blocked/:id", getBlockedUsers);
+
 router.get("/:id", getUserById);  // Add this route - IMPORTANT: this must come AFTER /search
 
 router.put("/update-profile", updateProfile);

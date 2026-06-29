@@ -159,16 +159,110 @@ const searchUsers = async (req, res) => {
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const user = await User.findById(id).select('-followRequests');
-    
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+
+const blockUser = async (req, res) => {
+  try {
+    const { userId, blockedUserId } = req.body;
+
+    if (userId === blockedUserId) {
+      return res.status(400).json({
+        message: "You cannot block yourself.",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (!user.blockedUsers.includes(blockedUserId)) {
+      user.blockedUsers.push(blockedUserId);
+
+      // Remove follow relationship
+      user.following = user.following.filter(
+        (id) => id.toString() !== blockedUserId
+      );
+
+      user.followers = user.followers.filter(
+        (id) => id.toString() !== blockedUserId
+      );
+
+      await User.findByIdAndUpdate(blockedUserId, {
+        $pull: {
+          followers: userId,
+          following: userId,
+          followRequests: userId,
+        },
+      });
+
+      await user.save();
+    }
+
+    res.json({
+      success: true,
+      message: "User blocked successfully.",
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+
+
+const unblockUser = async (req, res) => {
+  try {
+    const { userId, blockedUserId } = req.body;
+
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        blockedUsers: blockedUserId,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "User unblocked successfully.",
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+
+const getBlockedUsers = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id).populate(
+      "blockedUsers",
+      "name email picture"
+    );
+
+    res.json(user.blockedUsers);
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
   }
 };
 
@@ -177,5 +271,8 @@ module.exports = {
   getUsers,
   updateProfile,
   searchUsers,
-   getUserById,
+  getUserById,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
 };

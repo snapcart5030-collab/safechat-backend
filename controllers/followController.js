@@ -21,6 +21,22 @@ const sendFollowRequest = async (req, res) => {
       });
     }
 
+    // BLOCK CHECK - Check if sender has blocked receiver
+    if (sender.blockedUsers.some((id) => id.toString() === receiverId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You have blocked this user. Cannot send follow request.",
+      });
+    }
+
+    // BLOCK CHECK - Check if receiver has blocked sender
+    if (receiver.blockedUsers.some((id) => id.toString() === senderId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You have been blocked by this user.",
+      });
+    }
+
     const alreadyRequested = receiver.followRequests.some(
       (id) => id.toString() === senderId
     );
@@ -51,14 +67,13 @@ const sendFollowRequest = async (req, res) => {
       message: `${sender.name} sent you a follow request`,
     });
 
-
     if (receiver.fcmToken) {
-  await sendNotification(
-    receiver.fcmToken,
-    "New Follow Request",
-    `${sender.name} sent you a follow request`
-  );
-}
+      await sendNotification(
+        receiver.fcmToken,
+        "New Follow Request",
+        `${sender.name} sent you a follow request`
+      );
+    }
 
     if (global.io) {
       global.io.to(receiverId).emit("newNotification", {
@@ -89,11 +104,29 @@ const sendFollowRequest = async (req, res) => {
 const getFollowRequests = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId).populate(
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // Populate follow requests but filter out blocked users
+    const populatedUser = await User.findById(userId).populate(
       "followRequests",
       "_id name email picture username bio"
     );
-    res.json(user.followRequests);
+
+    // Filter out any users that the current user has blocked
+    const filteredRequests = populatedUser.followRequests.filter(
+      (requester) => !user.blockedUsers.some(
+        (blockedId) => blockedId.toString() === requester._id.toString()
+      )
+    );
+
+    res.json(filteredRequests);
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -111,6 +144,22 @@ const acceptFollowRequest = async (req, res) => {
     if (!currentUser || !requester) {
       return res.status(404).json({
         message: "User not found",
+      });
+    }
+
+    // BLOCK CHECK - Check if current user has blocked requester
+    if (currentUser.blockedUsers.some((id) => id.toString() === requesterId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You have blocked this user. Cannot accept request.",
+      });
+    }
+
+    // BLOCK CHECK - Check if requester has blocked current user
+    if (requester.blockedUsers.some((id) => id.toString() === currentUserId)) {
+      return res.status(403).json({
+        success: false,
+        message: "This user has blocked you. Cannot accept request.",
       });
     }
 
@@ -134,12 +183,12 @@ const acceptFollowRequest = async (req, res) => {
     });
 
     if (requester.fcmToken) {
-  await sendNotification(
-    requester.fcmToken,
-    "Follow Request Accepted",
-    `${currentUser.name} accepted your follow request`
-  );
-}
+      await sendNotification(
+        requester.fcmToken,
+        "Follow Request Accepted",
+        `${currentUser.name} accepted your follow request`
+      );
+    }
 
     if (global.io) {
       global.io.to(requesterId).emit("newNotification", {
@@ -176,15 +225,37 @@ const acceptFollowRequest = async (req, res) => {
 const rejectFollowRequest = async (req, res) => {
   try {
     const { currentUserId, requesterId } = req.body;
+    
     const currentUser = await User.findById(currentUserId);
+    const requester = await User.findById(requesterId);
+
+    if (!currentUser || !requester) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // BLOCK CHECK - Check if current user has blocked requester
+    if (currentUser.blockedUsers.some((id) => id.toString() === requesterId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You have blocked this user. Cannot reject request.",
+      });
+    }
+
+    // BLOCK CHECK - Check if requester has blocked current user
+    if (requester.blockedUsers.some((id) => id.toString() === currentUserId)) {
+      return res.status(403).json({
+        success: false,
+        message: "This user has blocked you. Cannot reject request.",
+      });
+    }
 
     currentUser.followRequests = currentUser.followRequests.filter(
       (id) => id.toString() !== requesterId
     );
 
     await currentUser.save();
-
-    const requester = await User.findById(requesterId);
 
     await Notification.create({
       sender: currentUserId,
@@ -194,12 +265,12 @@ const rejectFollowRequest = async (req, res) => {
     });
 
     if (requester.fcmToken) {
-  await sendNotification(
-    requester.fcmToken,
-    "Follow Request Rejected",
-    `${currentUser.name} rejected your follow request`
-  );
-}
+      await sendNotification(
+        requester.fcmToken,
+        "Follow Request Rejected",
+        `${currentUser.name} rejected your follow request`
+      );
+    }
 
     if (global.io) {
       global.io.to(requesterId).emit("newNotification", {
@@ -225,11 +296,28 @@ const rejectFollowRequest = async (req, res) => {
 const getAcceptedUsers = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId).populate(
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const populatedUser = await User.findById(userId).populate(
       "following",
       "_id name email picture username bio"
     );
-    res.json(user.following);
+
+    // Filter out blocked users
+    const filteredFollowing = populatedUser.following.filter(
+      (followedUser) => !user.blockedUsers.some(
+        (blockedId) => blockedId.toString() === followedUser._id.toString()
+      )
+    );
+
+    res.json(filteredFollowing);
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -241,11 +329,28 @@ const getAcceptedUsers = async (req, res) => {
 const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId).populate(
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const populatedUser = await User.findById(userId).populate(
       "followers",
       "_id name email picture username bio"
     );
-    res.json(user.followers);
+
+    // Filter out blocked users
+    const filteredFollowers = populatedUser.followers.filter(
+      (follower) => !user.blockedUsers.some(
+        (blockedId) => blockedId.toString() === follower._id.toString()
+      )
+    );
+
+    res.json(filteredFollowers);
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -257,14 +362,27 @@ const getFollowers = async (req, res) => {
 const getAllConnections = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId)
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const populatedUser = await User.findById(userId)
       .populate("following", "_id name email picture username bio")
       .populate("followers", "_id name email picture username bio");
 
-    // Combine both arrays and remove duplicates
-    const connections = [...user.following, ...user.followers];
+    // Combine both arrays and remove duplicates, then filter out blocked users
+    const connections = [...populatedUser.following, ...populatedUser.followers];
     const uniqueConnections = connections.filter(
-      (user, index, self) => index === self.findIndex((u) => u._id.toString() === user._id.toString())
+      (user, index, self) => 
+        index === self.findIndex((u) => u._id.toString() === user._id.toString()) &&
+        !populatedUser.blockedUsers.some(
+          (blockedId) => blockedId.toString() === user._id.toString()
+        )
     );
 
     res.json(uniqueConnections);
@@ -289,6 +407,7 @@ const unfollowUser = async (req, res) => {
       });
     }
 
+    // BLOCK CHECK - Can still unfollow even if blocked, but don't show in lists
     // Check if following
     const isFollowing = currentUser.following.some(
       (id) => id.toString() === unfollowId
@@ -367,9 +486,15 @@ const checkFollowingStatus = async (req, res) => {
       (id) => id.toString() === targetUserId
     );
 
+    // Check if blocked
+    const isBlocked = currentUser.blockedUsers.some(
+      (id) => id.toString() === targetUserId
+    );
+
     res.json({
       isFollowing,
       hasRequested,
+      isBlocked,
     });
   } catch (error) {
     res.status(500).json({
@@ -382,19 +507,188 @@ const checkFollowingStatus = async (req, res) => {
 const getMutualFriends = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId)
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const populatedUser = await User.findById(userId)
       .populate("following", "_id name email picture username bio")
       .populate("followers", "_id name email picture username bio");
 
-    const mutualFriends = user.following.filter((followedUser) =>
-      user.followers.some(
-        (follower) => follower._id.toString() === followedUser._id.toString()
+    // Get mutual friends and filter out blocked users
+    const mutualFriends = populatedUser.following.filter((followedUser) =>
+      populatedUser.followers.some(
+        (follower) => 
+          follower._id.toString() === followedUser._id.toString() &&
+          !populatedUser.blockedUsers.some(
+            (blockedId) => blockedId.toString() === followedUser._id.toString()
+          )
       )
     );
 
     res.json(mutualFriends);
   } catch (error) {
     res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+// NEW: Block a user
+const blockUser = async (req, res) => {
+  try {
+    const { currentUserId, blockUserId } = req.body;
+
+    if (currentUserId === blockUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot block yourself",
+      });
+    }
+
+    const currentUser = await User.findById(currentUserId);
+    const userToBlock = await User.findById(blockUserId);
+
+    if (!currentUser || !userToBlock) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if already blocked
+    if (currentUser.blockedUsers.some((id) => id.toString() === blockUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "User already blocked",
+      });
+    }
+
+    // Add to blocked users
+    currentUser.blockedUsers.push(blockUserId);
+
+    // Remove from following/followers if any
+    currentUser.following = currentUser.following.filter(
+      (id) => id.toString() !== blockUserId
+    );
+    currentUser.followers = currentUser.followers.filter(
+      (id) => id.toString() !== blockUserId
+    );
+    currentUser.followRequests = currentUser.followRequests.filter(
+      (id) => id.toString() !== blockUserId
+    );
+
+    // Remove from other user's following/followers
+    userToBlock.following = userToBlock.following.filter(
+      (id) => id.toString() !== currentUserId
+    );
+    userToBlock.followers = userToBlock.followers.filter(
+      (id) => id.toString() !== currentUserId
+    );
+    userToBlock.followRequests = userToBlock.followRequests.filter(
+      (id) => id.toString() !== currentUserId
+    );
+
+    await currentUser.save();
+    await userToBlock.save();
+
+    // Emit block event
+    if (global.io) {
+      global.io.to(currentUserId).emit("userBlocked", {
+        blockedUserId: blockUserId,
+      });
+      global.io.to(blockUserId).emit("userBlockedBy", {
+        blockedByUserId: currentUserId,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User blocked successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// NEW: Unblock a user
+const unblockUser = async (req, res) => {
+  try {
+    const { currentUserId, unblockUserId } = req.body;
+
+    const currentUser = await User.findById(currentUserId);
+    const userToUnblock = await User.findById(unblockUserId);
+
+    if (!currentUser || !userToUnblock) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if not blocked
+    if (!currentUser.blockedUsers.some((id) => id.toString() === unblockUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "User is not blocked",
+      });
+    }
+
+    // Remove from blocked users
+    currentUser.blockedUsers = currentUser.blockedUsers.filter(
+      (id) => id.toString() !== unblockUserId
+    );
+
+    await currentUser.save();
+
+    // Emit unblock event
+    if (global.io) {
+      global.io.to(currentUserId).emit("userUnblocked", {
+        unblockedUserId: unblockUserId,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User unblocked successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// NEW: Get blocked users list
+const getBlockedUsers = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).populate(
+      "blockedUsers",
+      "_id name email picture username bio"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json(user.blockedUsers);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
       message: error.message,
     });
   }
@@ -411,4 +705,7 @@ module.exports = {
   unfollowUser,
   checkFollowingStatus,
   getMutualFriends,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
 };

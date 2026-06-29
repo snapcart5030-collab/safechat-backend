@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema(
     aiUsage: {
       count: {
         type: Number,
-        default: 0, 
+        default: 0,
       },
 
       resetAt: {
@@ -58,6 +58,12 @@ const userSchema = new mongoose.Schema(
 
     // PENDING REQUESTS
     followRequests: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",

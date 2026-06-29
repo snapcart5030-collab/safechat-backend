@@ -14,18 +14,41 @@ const sendMessage = async (req, res) => {
     const { senderId, receiverId, message } = req.body;
 
     const senderUser = await User.findById(senderId);
-    const receiverUserCheck = await User.findById(receiverId);
+    const receiverUser = await User.findById(receiverId);
 
-    if (!senderUser || !receiverUserCheck) {
+    if (!senderUser || !receiverUser) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
 
+    // BLOCK CHECK
+    if (
+      senderUser.blockedUsers.some(
+        (id) => id.toString() === receiverId
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You have blocked this user.",
+      });
+    }
+
+    if (
+      receiverUser.blockedUsers.some(
+        (id) => id.toString() === senderId
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are blocked by this user.",
+      });
+    }
+
     const canChat =
       senderUser.following.some((id) => id.toString() === receiverId) &&
-      receiverUserCheck.followers.some((id) => id.toString() === senderId);
+      receiverUser.followers.some((id) => id.toString() === senderId);
 
     if (!canChat) {
       return res.status(403).json({
@@ -45,7 +68,8 @@ const sendMessage = async (req, res) => {
       autoDeleteAt: new Date(Date.now() + 30000), // 30 sec
     });
 
-    const receiverUser = await User.findById(receiverId);
+    // REMOVED DUPLICATE receiverUser FETCH HERE
+    // Using the existing receiverUser from above
 
     if (receiverUser && receiverUser.fcmToken) {
       await sendNotification(receiverUser.fcmToken, "New Message", message);
@@ -81,6 +105,39 @@ const sendMessage = async (req, res) => {
 const getMessages = async (req, res) => {
   try {
     const { senderId, receiverId } = req.params;
+
+    const senderUser = await User.findById(senderId);
+    const receiverUser = await User.findById(receiverId);
+
+    if (!senderUser || !receiverUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // BLOCK CHECK
+    if (
+      senderUser.blockedUsers.some(
+        (id) => id.toString() === receiverId
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You have blocked this user.",
+      });
+    }
+
+    if (
+      receiverUser.blockedUsers.some(
+        (id) => id.toString() === senderId
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are blocked by this user.",
+      });
+    }
 
     const messages = await Message.find({
       $or: [
@@ -183,6 +240,12 @@ const getAllConversations = async (req, res) => {
   try {
     const { userId } = req.params;
 
+    const currentUser = await User.findById(userId);
+
+    const blockedUsers = currentUser.blockedUsers.map((id) =>
+      id.toString()
+    );
+
     // Get all users that the current user has chatted with
     const messages = await Message.find({
       $or: [{ senderId: userId }, { receiverId: userId }],
@@ -199,6 +262,10 @@ const getAllConversations = async (req, res) => {
       const receiverId = msg.receiverId._id ? msg.receiverId._id.toString() : msg.receiverId.toString();
 
       const partnerId = senderId === userId ? receiverId : senderId;
+
+      if (blockedUsers.includes(partnerId)) {
+        return;
+      }
 
       if (!chatPartners.has(partnerId)) {
         const partner = senderId === userId ? msg.receiverId : msg.senderId;
@@ -375,5 +442,5 @@ module.exports = {
   markSeen,
   getUnreadCount,
   deleteMessage,
-  deliverOfflineMessages, // Add this
+  deliverOfflineMessages,
 };
