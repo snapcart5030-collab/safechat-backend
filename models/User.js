@@ -63,10 +63,33 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
+      },
+    ],
+
+    // NEW: Track one-time messages from blocked users
+    blockedMessages: [
+      {
+        blockerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        message: {
+          type: String,
+          default: "",
+        },
+        sentAt: {
+          type: Date,
+          default: Date.now,
+        },
+        isRead: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
   },

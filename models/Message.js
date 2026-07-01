@@ -36,6 +36,12 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // NEW: Track message status for blocked users
+    status: {
+      type: String,
+      enum: ["sent", "delivered", "read", "blocked_waiting"],
+      default: "sent",
+    },
   },
   {
     timestamps: true,
@@ -46,5 +52,6 @@ const messageSchema = new mongoose.Schema(
 messageSchema.index({ senderId: 1, receiverId: 1 });
 messageSchema.index({ receiverId: 1, isRead: 1 });
 messageSchema.index({ autoDeleteAt: 1 });
+messageSchema.index({ status: 1 });
 
 module.exports = mongoose.model("Message", messageSchema);

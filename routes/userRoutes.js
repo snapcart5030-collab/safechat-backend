@@ -11,6 +11,7 @@ const {
   blockUser,
   unblockUser,
   getBlockedUsers,
+  checkBlockStatus,
 } = require("../controllers/userController");
 
 router.get("/", getUsers);
@@ -30,5 +31,7 @@ router.put("/upload-profile", upload.single("image"), async (req, res) => {
     imageUrl: req.file.path,
   });
 });
+
+router.get("/block-status/:userId/:targetUserId", require("../controllers/userController").checkBlockStatus);
 
 module.exports = router;

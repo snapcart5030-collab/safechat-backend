@@ -18,8 +18,8 @@ const followRoutes = require("./routes/followRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatCustomizationRoutes = require('./routes/chatCustomizationRoutes');
 const Message = require("./models/Message");
+const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
-
 
 const app = express();
 const server = http.createServer(app);
@@ -89,6 +89,155 @@ const activeLocationSharing = new Map();
 // ================= SOCKET.IO =================
 io.on("connection", (socket) => {
   console.log("User Connected:", socket.id);
+
+  // ========== BLOCK/UNBLOCK SOCKET EVENTS ==========
+
+  // User blocks someone
+  socket.on("blockUser", (data) => {
+    const { blockerId, blockedId, blockerName, blockedName } = data;
+    
+    console.log(`🔒 ${blockerName} blocked ${blockedName}`);
+    
+    io.to(blockedId).emit("userBlocked", {
+      by: blockerId,
+      byName: blockerName,
+      message: `${blockerName} has blocked you`,
+      blocked: true,
+      timestamp: new Date(),
+    });
+    
+    io.to(blockerId).emit("userBlockedSuccess", {
+      blockedUser: blockedId,
+      blockedName: blockedName,
+      timestamp: new Date(),
+    });
+    
+    io.to(blockedId).emit("chatListUpdated", {
+      userId: blockedId,
+      chatWith: blockerId,
+      blocked: true,
+      blockedBy: blockerId,
+      lastMessage: `${blockerName} has blocked you`,
+      lastMessageTime: new Date(),
+    });
+    
+    io.to(blockerId).emit("chatListUpdated", {
+      userId: blockerId,
+      chatWith: blockedId,
+      blocked: true,
+      blockedBy: blockerId,
+      lastMessage: `You blocked ${blockedName}`,
+      lastMessageTime: new Date(),
+    });
+  });
+
+  // User unblocks someone
+  socket.on("unblockUser", (data) => {
+    const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
+    
+    console.log(`🔓 ${unblockerName} unblocked ${unblockedName}`);
+    
+    io.to(unblockedId).emit("userUnblocked", {
+      by: unblockerId,
+      byName: unblockerName,
+      message: `${unblockerName} has unblocked you. You can chat again!`,
+      unblocked: true,
+      timestamp: new Date(),
+    });
+    
+    io.to(unblockerId).emit("userUnblockedSuccess", {
+      unblockedUser: unblockedId,
+      unblockedName: unblockedName,
+      timestamp: new Date(),
+    });
+    
+    io.to(unblockedId).emit("chatListUpdated", {
+      userId: unblockedId,
+      chatWith: unblockerId,
+      blocked: false,
+      unblocked: true,
+      lastMessage: `${unblockerName} has unblocked you. You can chat now!`,
+      lastMessageTime: new Date(),
+    });
+    
+    io.to(unblockerId).emit("chatListUpdated", {
+      userId: unblockerId,
+      chatWith: unblockedId,
+      blocked: false,
+      unblocked: true,
+      lastMessage: `You unblocked ${unblockedName}. You can chat now!`,
+      lastMessageTime: new Date(),
+    });
+    
+    io.to(unblockerId).emit("chatRestored", {
+      with: unblockedId,
+      name: unblockedName,
+    });
+    
+    io.to(unblockedId).emit("chatRestored", {
+      with: unblockerId,
+      name: unblockerName,
+    });
+  });
+
+  // Blocked user sends one-time message
+  socket.on("blockedUserMessage", (data) => {
+    const { senderId, receiverId, message, senderName } = data;
+    
+    console.log(`📨 Blocked user ${senderName} sent one-time message to ${receiverId}`);
+    
+    io.to(receiverId).emit("blockedUserMessaged", {
+      from: senderId,
+      fromName: senderName,
+      message: message,
+      timestamp: new Date(),
+      oneTime: true,
+    });
+    
+    io.to(senderId).emit("messageWaitingForUnblock", {
+      to: receiverId,
+      message: message,
+      timestamp: new Date(),
+      status: "waiting_for_unblock",
+    });
+  });
+
+  // Check block status
+  socket.on("checkBlockStatus", async (data) => {
+    const { userId, targetUserId } = data;
+    
+    try {
+      const user = await User.findById(userId);
+      const targetUser = await User.findById(targetUserId);
+      
+      const isBlocked = user.blockedUsers.some(id => id.toString() === targetUserId);
+      const isBlockedBy = targetUser.blockedUsers.some(id => id.toString() === userId);
+      
+      let oneTimeMessage = null;
+      let oneTimeSent = false;
+      if (isBlockedBy) {
+        const blockedMsg = targetUser.blockedMessages.find(
+          (bm) => bm.blockerId.toString() === userId
+        );
+        if (blockedMsg) {
+          oneTimeMessage = blockedMsg.message;
+          oneTimeSent = true;
+        }
+      }
+      
+      io.to(userId).emit("blockStatusResponse", {
+        userId: userId,
+        targetUserId: targetUserId,
+        blocked: isBlocked || isBlockedBy,
+        blockedBy: isBlocked ? userId : isBlockedBy ? targetUserId : null,
+        oneTimeSent: oneTimeSent,
+        oneTimeMessage: oneTimeMessage,
+        canChat: !(isBlocked || isBlockedBy),
+      });
+    } catch (error) {
+      console.error("Check block status error:", error);
+    }
+  });
 
   socket.on("join", (userId) => {
     socket.join(userId);

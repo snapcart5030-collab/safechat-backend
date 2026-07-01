@@ -23,7 +23,7 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    // BLOCK CHECK
+    // ========== BLOCK CHECK - Sender blocked Receiver ==========
     if (
       senderUser.blockedUsers.some(
         (id) => id.toString() === receiverId
@@ -31,21 +31,121 @@ const sendMessage = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "You have blocked this user.",
+        message: "You have blocked this user. Unblock to send messages.",
+        blocked: true,
+        blockedBy: senderId,
       });
     }
 
+    // ========== BLOCK CHECK - Receiver blocked Sender ==========
     if (
       receiverUser.blockedUsers.some(
         (id) => id.toString() === senderId
       )
     ) {
-      return res.status(403).json({
-        success: false,
-        message: "You are blocked by this user.",
+      // Check if this user already sent a one-time message
+      const existingBlockedMessage = receiverUser.blockedMessages.find(
+        (bm) => bm.blockerId.toString() === senderId
+      );
+
+      // If one-time message already sent
+      if (existingBlockedMessage) {
+        return res.status(403).json({
+          success: false,
+          message: "You are blocked. You already sent your one-time message.",
+          blocked: true,
+          blockedBy: receiverId,
+          oneTimeSent: true,
+          oneTimeMessage: existingBlockedMessage.message,
+        });
+      }
+
+      // Allow ONE message (first time)
+      const newMessage = await Message.create({
+        senderId,
+        receiverId,
+        message,
+        seen: false,
+        isRead: false,
+        delivered: false,
+        createdAt: new Date(),
+        autoDeleteAt: new Date(Date.now() + 30000),
+        status: "blocked_waiting",
+      });
+
+      // Save the one-time message in receiver's blockedMessages array
+      receiverUser.blockedMessages.push({
+        blockerId: senderId,
+        message: message,
+        sentAt: new Date(),
+        isRead: false,
+      });
+      await receiverUser.save();
+
+      // Send notification to receiver (blocker) about the message
+      if (receiverUser && receiverUser.fcmToken) {
+        await sendNotification(
+          receiverUser.fcmToken,
+          "Blocked User Messaged You",
+          `${senderUser.name} sent a message while blocked: ${message.substring(0, 50)}...`
+        );
+      }
+
+      // Socket events
+      if (global.io) {
+        // Send to receiver (blocker) - they get the message
+        global.io.to(receiverId).emit("receiveMessage", newMessage);
+        
+        // Send to sender (blocked) - they see "waiting" status
+        global.io.to(senderId).emit("receiveMessage", newMessage);
+        
+        // Notify receiver that blocked user sent a message
+        global.io.to(receiverId).emit("blockedUserMessaged", {
+          from: senderId,
+          fromName: senderUser.name,
+          message: message,
+          timestamp: new Date(),
+          oneTime: true,
+        });
+
+        // Notify sender that message is waiting
+        global.io.to(senderId).emit("messageWaitingForUnblock", {
+          to: receiverId,
+          message: message,
+          timestamp: new Date(),
+          status: "waiting_for_unblock",
+        });
+
+        // Chat list updates
+        global.io.to(senderId).emit("chatListUpdated", {
+          userId: senderId,
+          chatWith: receiverId,
+          lastMessage: message,
+          lastMessageTime: new Date(),
+          blocked: true,
+          status: "waiting_for_unblock",
+        });
+
+        global.io.to(receiverId).emit("chatListUpdated", {
+          userId: receiverId,
+          chatWith: senderId,
+          lastMessage: message,
+          lastMessageTime: new Date(),
+          blocked: true,
+          fromBlockedUser: true,
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Message sent (waiting for unblock)",
+        status: "blocked_waiting",
+        oneTimeSent: true,
+        data: newMessage,
       });
     }
 
+    // ========== NORMAL CHAT FLOW (Not Blocked) ==========
     const canChat =
       senderUser.following.some((id) => id.toString() === receiverId) &&
       receiverUser.followers.some((id) => id.toString() === senderId);
@@ -65,11 +165,9 @@ const sendMessage = async (req, res) => {
       isRead: false,
       delivered: false,
       createdAt: new Date(),
-      autoDeleteAt: new Date(Date.now() + 30000), // 30 sec
+      autoDeleteAt: new Date(Date.now() + 30000),
+      status: "sent",
     });
-
-    // REMOVED DUPLICATE receiverUser FETCH HERE
-    // Using the existing receiverUser from above
 
     if (receiverUser && receiverUser.fcmToken) {
       await sendNotification(receiverUser.fcmToken, "New Message", message);
@@ -77,15 +175,12 @@ const sendMessage = async (req, res) => {
 
     if (global.io) {
       global.io.to(receiverId).emit("receiveMessage", newMessage);
-
-      // Emit to update chat list for both users
       global.io.to(senderId).emit("chatListUpdated", {
         userId: senderId,
         chatWith: receiverId,
         lastMessage: message,
         lastMessageTime: new Date(),
       });
-
       global.io.to(receiverId).emit("chatListUpdated", {
         userId: receiverId,
         chatWith: senderId,
@@ -96,6 +191,7 @@ const sendMessage = async (req, res) => {
 
     res.status(201).json(newMessage);
   } catch (error) {
+    console.error("Send message error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -116,26 +212,37 @@ const getMessages = async (req, res) => {
       });
     }
 
-    // BLOCK CHECK
-    if (
-      senderUser.blockedUsers.some(
-        (id) => id.toString() === receiverId
-      )
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "You have blocked this user.",
-      });
-    }
+    // Check if blocked - return block info instead of error
+    const isSenderBlocked = senderUser.blockedUsers.some(
+      (id) => id.toString() === receiverId
+    );
+    const isReceiverBlocked = receiverUser.blockedUsers.some(
+      (id) => id.toString() === senderId
+    );
 
-    if (
-      receiverUser.blockedUsers.some(
-        (id) => id.toString() === senderId
-      )
-    ) {
+    if (isSenderBlocked || isReceiverBlocked) {
+      // Check for one-time message
+      const blockedBy = isSenderBlocked ? senderId : receiverId;
+      const blockedUser = isSenderBlocked ? receiverId : senderId;
+      
+      // Find blocked message
+      let blockedMessage = null;
+      if (isReceiverBlocked) {
+        const user = await User.findById(receiverId);
+        const msg = user?.blockedMessages.find(
+          (bm) => bm.blockerId.toString() === senderId
+        );
+        if (msg) blockedMessage = msg;
+      }
+
       return res.status(403).json({
         success: false,
-        message: "You are blocked by this user.",
+        message: isSenderBlocked ? "You have blocked this user" : "You are blocked by this user",
+        blocked: true,
+        blockedBy: blockedBy,
+        oneTimeSent: !!blockedMessage,
+        oneTimeMessage: blockedMessage?.message || null,
+        oneTimeSentAt: blockedMessage?.sentAt || null,
       });
     }
 
@@ -172,7 +279,6 @@ const markRead = async (req, res) => {
       await msg.save();
     }
 
-    // Emit read status update
     if (global.io) {
       global.io.to(senderId).emit("messagesRead", {
         by: receiverId,
@@ -192,12 +298,37 @@ const markRead = async (req, res) => {
   }
 };
 
-// NEW: Get last message between two users
 const getLastMessage = async (req, res) => {
   try {
     const { userId, chatWithId } = req.params;
 
-    // Get the last message between these two users
+    const currentUser = await User.findById(userId);
+    const chatUser = await User.findById(chatWithId);
+
+    // Check block status
+    const isBlocked = currentUser.blockedUsers.some(id => id.toString() === chatWithId);
+    const isBlockedBy = chatUser.blockedUsers.some(id => id.toString() === userId);
+
+    if (isBlocked || isBlockedBy) {
+      let blockedMessage = null;
+      if (isBlockedBy) {
+        const msg = chatUser?.blockedMessages.find(
+          (bm) => bm.blockerId.toString() === userId
+        );
+        if (msg) blockedMessage = msg;
+      }
+
+      return res.json({
+        message: blockedMessage?.message || "Blocked",
+        createdAt: blockedMessage?.sentAt || null,
+        unreadCount: 0,
+        seen: false,
+        blocked: true,
+        blockedBy: isBlocked ? userId : chatWithId,
+        oneTimeSent: !!blockedMessage,
+      });
+    }
+
     const lastMessage = await Message.findOne({
       $or: [
         { senderId: userId, receiverId: chatWithId },
@@ -207,14 +338,12 @@ const getLastMessage = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(1);
 
-    // Count unread messages
     const unreadCount = await Message.countDocuments({
       senderId: chatWithId,
       receiverId: userId,
       isRead: false,
     });
 
-    // Check if messages are seen
     const lastSeen = await Message.findOne({
       senderId: chatWithId,
       receiverId: userId,
@@ -227,6 +356,7 @@ const getLastMessage = async (req, res) => {
       createdAt: lastMessage?.createdAt || null,
       unreadCount: unreadCount || 0,
       seen: lastSeen?.seen || false,
+      blocked: false,
     });
   } catch (error) {
     res.status(500).json({
@@ -235,7 +365,6 @@ const getLastMessage = async (req, res) => {
   }
 };
 
-// NEW: Get all conversations with last messages for a user
 const getAllConversations = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -246,7 +375,6 @@ const getAllConversations = async (req, res) => {
       id.toString()
     );
 
-    // Get all users that the current user has chatted with
     const messages = await Message.find({
       $or: [{ senderId: userId }, { receiverId: userId }],
     })
@@ -254,7 +382,6 @@ const getAllConversations = async (req, res) => {
       .populate('senderId', 'name email picture')
       .populate('receiverId', 'name email picture');
 
-    // Get unique chat partners
     const chatPartners = new Map();
 
     messages.forEach((msg) => {
@@ -279,11 +406,11 @@ const getAllConversations = async (req, res) => {
           lastMessageTime: msg.createdAt,
           unreadCount: 0,
           seen: msg.seen || false,
+          blocked: false,
         });
       }
     });
 
-    // Count unread messages for each partner
     for (const [partnerId, data] of chatPartners) {
       const unreadCount = await Message.countDocuments({
         senderId: partnerId,
@@ -302,7 +429,6 @@ const getAllConversations = async (req, res) => {
   }
 };
 
-// NEW: Update seen status for messages
 const markSeen = async (req, res) => {
   try {
     const { senderId, receiverId } = req.body;
@@ -330,7 +456,6 @@ const markSeen = async (req, res) => {
   }
 };
 
-// NEW: Get unread message count for a user
 const getUnreadCount = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -350,7 +475,6 @@ const getUnreadCount = async (req, res) => {
   }
 };
 
-// NEW: Delete a message (for both users)
 const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -365,7 +489,6 @@ const deleteMessage = async (req, res) => {
       });
     }
 
-    // Only allow deletion if user is sender or receiver
     if (message.senderId.toString() !== userId && message.receiverId.toString() !== userId) {
       return res.status(403).json({
         success: false,
@@ -375,7 +498,6 @@ const deleteMessage = async (req, res) => {
 
     await Message.findByIdAndDelete(messageId);
 
-    // Emit deletion event
     if (global.io) {
       global.io.to(message.senderId.toString()).emit("messageDeleted", messageId);
       global.io.to(message.receiverId.toString()).emit("messageDeleted", messageId);
@@ -392,12 +514,10 @@ const deleteMessage = async (req, res) => {
   }
 };
 
-// NEW: Deliver offline messages when user comes online
 const deliverOfflineMessages = async (req, res) => {
   try {
     const { senderId, receiverId } = req.body;
 
-    // Find all messages that were sent while receiver was offline
     const messages = await Message.find({
       senderId: senderId,
       receiverId: receiverId,
@@ -405,7 +525,6 @@ const deliverOfflineMessages = async (req, res) => {
       delivered: false
     });
 
-    // Mark them as delivered
     const deliveredMessages = [];
     for (const msg of messages) {
       msg.delivered = true;
@@ -413,7 +532,6 @@ const deliverOfflineMessages = async (req, res) => {
       deliveredMessages.push(msg);
     }
 
-    // Emit delivered messages via socket
     if (global.io) {
       deliveredMessages.forEach(msg => {
         global.io.to(receiverId).emit("receiveMessage", msg);
@@ -433,6 +551,55 @@ const deliverOfflineMessages = async (req, res) => {
   }
 };
 
+// NEW: Check block status between two users
+const checkBlockStatus = async (req, res) => {
+  try {
+    const { userId, targetUserId } = req.params;
+
+    const user = await User.findById(userId);
+    const targetUser = await User.findById(targetUserId);
+
+    if (!user || !targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const userBlockedTarget = user.blockedUsers.some(
+      (id) => id.toString() === targetUserId
+    );
+    const targetBlockedUser = targetUser.blockedUsers.some(
+      (id) => id.toString() === userId
+    );
+
+    // Check for one-time message
+    let oneTimeMessage = null;
+    let oneTimeSent = false;
+    if (targetBlockedUser) {
+      const blockedMsg = targetUser.blockedMessages.find(
+        (bm) => bm.blockerId.toString() === userId
+      );
+      if (blockedMsg) {
+        oneTimeMessage = blockedMsg.message;
+        oneTimeSent = true;
+      }
+    }
+
+    res.json({
+      blocked: userBlockedTarget || targetBlockedUser,
+      blockedBy: userBlockedTarget ? userId : targetBlockedUser ? targetUserId : null,
+      oneTimeSent: oneTimeSent,
+      oneTimeMessage: oneTimeMessage,
+      canChat: !(userBlockedTarget || targetBlockedUser),
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -443,4 +610,5 @@ module.exports = {
   getUnreadCount,
   deleteMessage,
   deliverOfflineMessages,
+  checkBlockStatus,
 };
