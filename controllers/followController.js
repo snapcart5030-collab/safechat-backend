@@ -87,6 +87,14 @@ const sendFollowRequest = async (req, res) => {
         message: `${sender.name} followed you back`,
       });
 
+      // Also notify the sender that they got followed back
+      await Notification.create({
+        sender: receiverId,
+        receiver: senderId,
+        type: "follow_accepted",
+        message: `${receiver.name} accepted your follow request`,
+      });
+
       // Send socket events
       if (global.io) {
         global.io.to(receiverId).emit("newNotification", {
@@ -97,9 +105,17 @@ const sendFollowRequest = async (req, res) => {
           createdAt: new Date(),
         });
 
+        global.io.to(senderId).emit("newNotification", {
+          senderName: receiver.name,
+          senderId: receiverId,
+          type: "follow_accepted",
+          message: `${receiver.name} accepted your follow request`,
+          createdAt: new Date(),
+        });
+
         global.io.to(senderId).emit("followAccepted", {
-          acceptedBy: senderId,
-          acceptedUser: receiverId,
+          acceptedBy: receiverId,
+          acceptedUser: senderId,
         });
 
         global.io.to(receiverId).emit("followAccepted", {
@@ -155,6 +171,7 @@ const sendFollowRequest = async (req, res) => {
       mutualFollow: false,
     });
   } catch (error) {
+    console.error("Send follow request error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -188,6 +205,7 @@ const getFollowRequests = async (req, res) => {
 
     res.json(filteredRequests);
   } catch (error) {
+    console.error("Get follow requests error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -235,11 +253,20 @@ const acceptFollowRequest = async (req, res) => {
     await currentUser.save();
     await requester.save();
 
+    // Create notification for requester
     await Notification.create({
       sender: currentUserId,
       receiver: requesterId,
       type: "request_accepted",
       message: `${currentUser.name} accepted your follow request`,
+    });
+
+    // Create notification for current user (follow back)
+    await Notification.create({
+      sender: requesterId,
+      receiver: currentUserId,
+      type: "follow",
+      message: `${requester.name} is now following you`,
     });
 
     if (requester.fcmToken) {
@@ -256,6 +283,14 @@ const acceptFollowRequest = async (req, res) => {
         senderId: currentUserId,
         type: "request_accepted",
         message: `${currentUser.name} accepted your follow request`,
+        createdAt: new Date(),
+      });
+
+      global.io.to(currentUserId).emit("newNotification", {
+        senderName: requester.name,
+        senderId: requesterId,
+        type: "follow",
+        message: `${requester.name} is now following you`,
         createdAt: new Date(),
       });
 
@@ -276,6 +311,7 @@ const acceptFollowRequest = async (req, res) => {
       message: "Follow request accepted",
     });
   } catch (error) {
+    console.error("Accept follow request error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -300,11 +336,30 @@ const rejectFollowRequest = async (req, res) => {
 
     await currentUser.save();
 
+    // Create notification for rejection
+    await Notification.create({
+      sender: currentUserId,
+      receiver: requesterId,
+      type: "request_rejected",
+      message: `${currentUser.name} rejected your follow request`,
+    });
+
+    if (global.io) {
+      global.io.to(requesterId).emit("newNotification", {
+        senderName: currentUser.name,
+        senderId: currentUserId,
+        type: "request_rejected",
+        message: `${currentUser.name} rejected your follow request`,
+        createdAt: new Date(),
+      });
+    }
+
     res.json({
       success: true,
       message: "Request rejected",
     });
   } catch (error) {
+    console.error("Reject follow request error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -337,6 +392,7 @@ const getAcceptedUsers = async (req, res) => {
 
     res.json(filteredFollowing);
   } catch (error) {
+    console.error("Get accepted users error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -369,6 +425,7 @@ const getFollowers = async (req, res) => {
 
     res.json(filteredFollowers);
   } catch (error) {
+    console.error("Get followers error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -403,6 +460,7 @@ const getAllConnections = async (req, res) => {
 
     res.json(uniqueConnections);
   } catch (error) {
+    console.error("Get all connections error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -478,6 +536,7 @@ const unfollowUser = async (req, res) => {
       message: "Unfollowed successfully",
     });
   } catch (error) {
+    console.error("Unfollow user error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -515,6 +574,7 @@ const checkFollowingStatus = async (req, res) => {
       isBlocked,
     });
   } catch (error) {
+    console.error("Check following status error:", error);
     res.status(500).json({
       message: error.message,
     });
@@ -550,6 +610,7 @@ const getMutualFriends = async (req, res) => {
 
     res.json(mutualFriends);
   } catch (error) {
+    console.error("Get mutual friends error:", error);
     res.status(500).json({
       message: error.message,
     });
