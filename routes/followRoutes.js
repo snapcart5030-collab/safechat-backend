@@ -13,7 +13,7 @@ const {
   getMutualFriends,
 } = require("../controllers/followController");
 
-// Send follow request
+// Send follow request (with mutual follow detection)
 router.post("/send-request", sendFollowRequest);
 
 // Get pending follow requests for a user

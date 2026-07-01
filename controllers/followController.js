@@ -37,16 +37,7 @@ const sendFollowRequest = async (req, res) => {
       });
     }
 
-    const alreadyRequested = receiver.followRequests.some(
-      (id) => id.toString() === senderId
-    );
-
-    if (alreadyRequested) {
-      return res.status(400).json({
-        message: "Request already sent",
-      });
-    }
-
+    // Check if already following
     const alreadyFollowing = sender.following.some(
       (id) => id.toString() === receiverId
     );
@@ -57,6 +48,74 @@ const sendFollowRequest = async (req, res) => {
       });
     }
 
+    // Check if receiver is already following sender (mutual follow)
+    const receiverIsFollowingSender = receiver.following.some(
+      (id) => id.toString() === senderId
+    );
+
+    // Check if request already sent
+    const alreadyRequested = receiver.followRequests.some(
+      (id) => id.toString() === senderId
+    );
+
+    if (alreadyRequested) {
+      return res.status(400).json({
+        message: "Request already sent",
+      });
+    }
+
+    // IF RECEIVER IS ALREADY FOLLOWING SENDER - INSTANT MUTUAL FOLLOW
+    if (receiverIsFollowingSender) {
+      // Add each other to following/followers
+      sender.following.push(receiverId);
+      receiver.followers.push(senderId);
+
+      await sender.save();
+      await receiver.save();
+
+      // Remove any pending requests
+      receiver.followRequests = receiver.followRequests.filter(
+        (id) => id.toString() !== senderId
+      );
+      await receiver.save();
+
+      // Create notification for mutual follow
+      await Notification.create({
+        sender: senderId,
+        receiver: receiverId,
+        type: "follow_accepted",
+        message: `${sender.name} followed you back`,
+      });
+
+      // Send socket events
+      if (global.io) {
+        global.io.to(receiverId).emit("newNotification", {
+          senderName: sender.name,
+          senderId: senderId,
+          type: "follow_accepted",
+          message: `${sender.name} followed you back`,
+          createdAt: new Date(),
+        });
+
+        global.io.to(senderId).emit("followAccepted", {
+          acceptedBy: senderId,
+          acceptedUser: receiverId,
+        });
+
+        global.io.to(receiverId).emit("followAccepted", {
+          acceptedBy: senderId,
+          acceptedUser: receiverId,
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "You are now following each other!",
+        mutualFollow: true,
+      });
+    }
+
+    // NORMAL FOLLOW REQUEST (receiver is not following sender)
     receiver.followRequests.push(senderId);
     await receiver.save();
 
@@ -93,6 +152,7 @@ const sendFollowRequest = async (req, res) => {
     res.json({
       success: true,
       message: "Follow request sent",
+      mutualFollow: false,
     });
   } catch (error) {
     res.status(500).json({
@@ -227,27 +287,10 @@ const rejectFollowRequest = async (req, res) => {
     const { currentUserId, requesterId } = req.body;
     
     const currentUser = await User.findById(currentUserId);
-    const requester = await User.findById(requesterId);
 
-    if (!currentUser || !requester) {
+    if (!currentUser) {
       return res.status(404).json({
         message: "User not found",
-      });
-    }
-
-    // BLOCK CHECK - Check if current user has blocked requester
-    if (currentUser.blockedUsers.some((id) => id.toString() === requesterId)) {
-      return res.status(403).json({
-        success: false,
-        message: "You have blocked this user. Cannot reject request.",
-      });
-    }
-
-    // BLOCK CHECK - Check if requester has blocked current user
-    if (requester.blockedUsers.some((id) => id.toString() === currentUserId)) {
-      return res.status(403).json({
-        success: false,
-        message: "This user has blocked you. Cannot reject request.",
       });
     }
 
@@ -256,31 +299,6 @@ const rejectFollowRequest = async (req, res) => {
     );
 
     await currentUser.save();
-
-    await Notification.create({
-      sender: currentUserId,
-      receiver: requesterId,
-      type: "request_rejected",
-      message: `${currentUser.name} rejected your follow request`,
-    });
-
-    if (requester.fcmToken) {
-      await sendNotification(
-        requester.fcmToken,
-        "Follow Request Rejected",
-        `${currentUser.name} rejected your follow request`
-      );
-    }
-
-    if (global.io) {
-      global.io.to(requesterId).emit("newNotification", {
-        senderName: currentUser.name,
-        senderId: currentUserId,
-        type: "request_rejected",
-        message: `${currentUser.name} rejected your follow request`,
-        createdAt: new Date(),
-      });
-    }
 
     res.json({
       success: true,
@@ -325,7 +343,6 @@ const getAcceptedUsers = async (req, res) => {
   }
 };
 
-// Get followers
 const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -358,7 +375,6 @@ const getFollowers = async (req, res) => {
   }
 };
 
-// Get all connections (both following and followers)
 const getAllConnections = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -393,7 +409,6 @@ const getAllConnections = async (req, res) => {
   }
 };
 
-// Unfollow user
 const unfollowUser = async (req, res) => {
   try {
     const { currentUserId, unfollowId } = req.body;
@@ -407,7 +422,6 @@ const unfollowUser = async (req, res) => {
       });
     }
 
-    // BLOCK CHECK - Can still unfollow even if blocked, but don't show in lists
     // Check if following
     const isFollowing = currentUser.following.some(
       (id) => id.toString() === unfollowId
@@ -424,6 +438,11 @@ const unfollowUser = async (req, res) => {
       (id) => id.toString() !== unfollowId
     );
     targetUser.followers = targetUser.followers.filter(
+      (id) => id.toString() !== currentUserId
+    );
+
+    // Also remove from followRequests if exists
+    targetUser.followRequests = targetUser.followRequests.filter(
       (id) => id.toString() !== currentUserId
     );
 
@@ -465,7 +484,6 @@ const unfollowUser = async (req, res) => {
   }
 };
 
-// Check if user is following another user
 const checkFollowingStatus = async (req, res) => {
   try {
     const { currentUserId, targetUserId } = req.params;
@@ -503,7 +521,6 @@ const checkFollowingStatus = async (req, res) => {
   }
 };
 
-// Get mutual friends (users who follow each other)
 const getMutualFriends = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -539,161 +556,6 @@ const getMutualFriends = async (req, res) => {
   }
 };
 
-// NEW: Block a user
-const blockUser = async (req, res) => {
-  try {
-    const { currentUserId, blockUserId } = req.body;
-
-    if (currentUserId === blockUserId) {
-      return res.status(400).json({
-        success: false,
-        message: "You cannot block yourself",
-      });
-    }
-
-    const currentUser = await User.findById(currentUserId);
-    const userToBlock = await User.findById(blockUserId);
-
-    if (!currentUser || !userToBlock) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    // Check if already blocked
-    if (currentUser.blockedUsers.some((id) => id.toString() === blockUserId)) {
-      return res.status(400).json({
-        success: false,
-        message: "User already blocked",
-      });
-    }
-
-    // Add to blocked users
-    currentUser.blockedUsers.push(blockUserId);
-
-    // Remove from following/followers if any
-    currentUser.following = currentUser.following.filter(
-      (id) => id.toString() !== blockUserId
-    );
-    currentUser.followers = currentUser.followers.filter(
-      (id) => id.toString() !== blockUserId
-    );
-    currentUser.followRequests = currentUser.followRequests.filter(
-      (id) => id.toString() !== blockUserId
-    );
-
-    // Remove from other user's following/followers
-    userToBlock.following = userToBlock.following.filter(
-      (id) => id.toString() !== currentUserId
-    );
-    userToBlock.followers = userToBlock.followers.filter(
-      (id) => id.toString() !== currentUserId
-    );
-    userToBlock.followRequests = userToBlock.followRequests.filter(
-      (id) => id.toString() !== currentUserId
-    );
-
-    await currentUser.save();
-    await userToBlock.save();
-
-    // Emit block event
-    if (global.io) {
-      global.io.to(currentUserId).emit("userBlocked", {
-        blockedUserId: blockUserId,
-      });
-      global.io.to(blockUserId).emit("userBlockedBy", {
-        blockedByUserId: currentUserId,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "User blocked successfully",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// NEW: Unblock a user
-const unblockUser = async (req, res) => {
-  try {
-    const { currentUserId, unblockUserId } = req.body;
-
-    const currentUser = await User.findById(currentUserId);
-    const userToUnblock = await User.findById(unblockUserId);
-
-    if (!currentUser || !userToUnblock) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    // Check if not blocked
-    if (!currentUser.blockedUsers.some((id) => id.toString() === unblockUserId)) {
-      return res.status(400).json({
-        success: false,
-        message: "User is not blocked",
-      });
-    }
-
-    // Remove from blocked users
-    currentUser.blockedUsers = currentUser.blockedUsers.filter(
-      (id) => id.toString() !== unblockUserId
-    );
-
-    await currentUser.save();
-
-    // Emit unblock event
-    if (global.io) {
-      global.io.to(currentUserId).emit("userUnblocked", {
-        unblockedUserId: unblockUserId,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "User unblocked successfully",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// NEW: Get blocked users list
-const getBlockedUsers = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const user = await User.findById(userId).populate(
-      "blockedUsers",
-      "_id name email picture username bio"
-    );
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    res.json(user.blockedUsers);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
 module.exports = {
   sendFollowRequest,
   getFollowRequests,
@@ -705,7 +567,4 @@ module.exports = {
   unfollowUser,
   checkFollowingStatus,
   getMutualFriends,
-  blockUser,
-  unblockUser,
-  getBlockedUsers,
 };
