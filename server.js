@@ -95,9 +95,9 @@ io.on("connection", (socket) => {
   // User blocks someone
   socket.on("blockUser", (data) => {
     const { blockerId, blockedId, blockerName, blockedName } = data;
-    
+
     console.log(`🔒 ${blockerName} blocked ${blockedName}`);
-    
+
     io.to(blockedId).emit("userBlocked", {
       by: blockerId,
       byName: blockerName,
@@ -105,13 +105,13 @@ io.on("connection", (socket) => {
       blocked: true,
       timestamp: new Date(),
     });
-    
+
     io.to(blockerId).emit("userBlockedSuccess", {
       blockedUser: blockedId,
       blockedName: blockedName,
       timestamp: new Date(),
     });
-    
+
     io.to(blockedId).emit("chatListUpdated", {
       userId: blockedId,
       chatWith: blockerId,
@@ -120,7 +120,7 @@ io.on("connection", (socket) => {
       lastMessage: `${blockerName} has blocked you`,
       lastMessageTime: new Date(),
     });
-    
+
     io.to(blockerId).emit("chatListUpdated", {
       userId: blockerId,
       chatWith: blockedId,
@@ -134,9 +134,9 @@ io.on("connection", (socket) => {
   // User unblocks someone
   socket.on("unblockUser", (data) => {
     const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
-    
+
     console.log(`🔓 ${unblockerName} unblocked ${unblockedName}`);
-    
+
     io.to(unblockedId).emit("userUnblocked", {
       by: unblockerId,
       byName: unblockerName,
@@ -144,13 +144,13 @@ io.on("connection", (socket) => {
       unblocked: true,
       timestamp: new Date(),
     });
-    
+
     io.to(unblockerId).emit("userUnblockedSuccess", {
       unblockedUser: unblockedId,
       unblockedName: unblockedName,
       timestamp: new Date(),
     });
-    
+
     io.to(unblockedId).emit("chatListUpdated", {
       userId: unblockedId,
       chatWith: unblockerId,
@@ -159,7 +159,7 @@ io.on("connection", (socket) => {
       lastMessage: `${unblockerName} has unblocked you. You can chat now!`,
       lastMessageTime: new Date(),
     });
-    
+
     io.to(unblockerId).emit("chatListUpdated", {
       userId: unblockerId,
       chatWith: unblockedId,
@@ -168,12 +168,12 @@ io.on("connection", (socket) => {
       lastMessage: `You unblocked ${unblockedName}. You can chat now!`,
       lastMessageTime: new Date(),
     });
-    
+
     io.to(unblockerId).emit("chatRestored", {
       with: unblockedId,
       name: unblockedName,
     });
-    
+
     io.to(unblockedId).emit("chatRestored", {
       with: unblockerId,
       name: unblockerName,
@@ -183,9 +183,9 @@ io.on("connection", (socket) => {
   // Blocked user sends one-time message
   socket.on("blockedUserMessage", (data) => {
     const { senderId, receiverId, message, senderName } = data;
-    
+
     console.log(`📨 Blocked user ${senderName} sent one-time message to ${receiverId}`);
-    
+
     io.to(receiverId).emit("blockedUserMessaged", {
       from: senderId,
       fromName: senderName,
@@ -193,7 +193,7 @@ io.on("connection", (socket) => {
       timestamp: new Date(),
       oneTime: true,
     });
-    
+
     io.to(senderId).emit("messageWaitingForUnblock", {
       to: receiverId,
       message: message,
@@ -205,14 +205,14 @@ io.on("connection", (socket) => {
   // Check block status
   socket.on("checkBlockStatus", async (data) => {
     const { userId, targetUserId } = data;
-    
+
     try {
       const user = await User.findById(userId);
       const targetUser = await User.findById(targetUserId);
-      
+
       const isBlocked = user.blockedUsers.some(id => id.toString() === targetUserId);
       const isBlockedBy = targetUser.blockedUsers.some(id => id.toString() === userId);
-      
+
       let oneTimeMessage = null;
       let oneTimeSent = false;
       if (isBlockedBy) {
@@ -224,7 +224,7 @@ io.on("connection", (socket) => {
           oneTimeSent = true;
         }
       }
-      
+
       io.to(userId).emit("blockStatusResponse", {
         userId: userId,
         targetUserId: targetUserId,
@@ -242,7 +242,7 @@ io.on("connection", (socket) => {
   socket.on("join", (userId) => {
     socket.join(userId);
     socket.userId = userId;
-    
+
     // Store socket to user mapping
     userSocketMap.set(socket.id, userId);
 
@@ -329,7 +329,7 @@ io.on("connection", (socket) => {
 
     if (!receiverSockets || receiverSockets.size === 0) {
       console.log(`❌ User ${receiverId} is offline`);
-      socket.emit("voice-call-user-offline", { 
+      socket.emit("voice-call-user-offline", {
         receiverId,
         message: "User is offline"
       });
@@ -417,17 +417,17 @@ io.on("connection", (socket) => {
     console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
     // Try to get the target socket ID from the call if not provided
-   const call = activeVoiceCalls.get(callId);
+    const call = activeVoiceCalls.get(callId);
 
-if (!call) return;
+    if (!call) return;
 
-let targetId;
+    let targetId;
 
-if (socket.id === call.callerSocketId) {
-    targetId = call.receiverSocketId;
-} else {
-    targetId = call.callerSocketId;
-}
+    if (socket.id === call.callerSocketId) {
+      targetId = call.receiverSocketId;
+    } else {
+      targetId = call.callerSocketId;
+    }
 
     if (!targetId) {
       console.error(`❌ No target socket found for call ${callId}`);
@@ -458,14 +458,20 @@ if (socket.id === call.callerSocketId) {
     console.log(`📡 Caller: ${callerId}, Receiver: ${receiverId}`);
 
     // Try to get the target socket ID from the call if not provided
-  const call = activeVoiceCalls.get(callId);
+    const call = activeVoiceCalls.get(callId);
 
-if (!call) {
-    console.log("❌ Call not found:", callId);
-    return;
-}
+    if (!call) {
+      console.log("❌ Call not found:", callId);
+      return;
+    }
 
-const targetId = call.receiverSocketId;
+    let targetId;
+
+    if (socket.id === call.receiverSocketId) {
+      targetId = call.callerSocketId;
+    } else {
+      targetId = call.receiverSocketId;
+    }
 
     if (!targetId) {
       console.error(`❌ No target socket found for call ${callId}`);
@@ -497,12 +503,12 @@ const targetId = call.receiverSocketId;
     // Try to get the target socket ID from the call if not provided
     const call = activeVoiceCalls.get(callId);
 
-if (!call) {
-    console.log("❌ Call not found:", callId);
-    return;
-}
+    if (!call) {
+      console.log("❌ Call not found:", callId);
+      return;
+    }
 
-const targetId = call.callerSocketId;
+    const targetId = call.callerSocketId;
 
     if (!targetId) {
       console.error(`❌ No target socket found for ICE candidate ${callId}`);
@@ -531,13 +537,13 @@ const targetId = call.callerSocketId;
     if (call) {
       // Notify the other participant
       if (call.callerSocketId && call.callerSocketId !== socket.id) {
-        io.to(call.callerSocketId).emit("voice-call-ended-by-other", { 
+        io.to(call.callerSocketId).emit("voice-call-ended-by-other", {
           callId,
           endedBy: socket.userId || "unknown"
         });
       }
       if (call.receiverSocketId && call.receiverSocketId !== socket.id) {
-        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", { 
+        io.to(call.receiverSocketId).emit("voice-call-ended-by-other", {
           callId,
           endedBy: socket.userId || "unknown"
         });
@@ -547,13 +553,13 @@ const targetId = call.callerSocketId;
     } else {
       // If call not found, broadcast to both participants
       if (callerId) {
-        io.to(callerId).emit("voice-call-ended-by-other", { 
+        io.to(callerId).emit("voice-call-ended-by-other", {
           callId,
           endedBy: socket.userId || "unknown"
         });
       }
       if (receiverId) {
-        io.to(receiverId).emit("voice-call-ended-by-other", { 
+        io.to(receiverId).emit("voice-call-ended-by-other", {
           callId,
           endedBy: socket.userId || "unknown"
         });
@@ -660,7 +666,7 @@ const targetId = call.callerSocketId;
       Array.from(onlineUsers.keys())
     );
   });
-  
+
 });
 
 // =============================================
