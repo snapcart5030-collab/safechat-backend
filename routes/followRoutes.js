@@ -42,5 +42,5 @@ router.get("/status/:currentUserId/:targetUserId", checkFollowingStatus);
 
 // Get mutual friends
 router.get("/mutual/:userId", getMutualFriends);
-
+  
 module.exports = router;

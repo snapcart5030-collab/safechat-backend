@@ -1,3 +1,4 @@
+// server.js
 require("dotenv").config();
 
 const express = require("express");
@@ -131,7 +132,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // User unblocks someone
+  // User unblocks someone - PRESERVES FOLLOW RELATIONSHIP
   socket.on("unblockUser", (data) => {
     const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
 
