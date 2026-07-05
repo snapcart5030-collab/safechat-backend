@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const Message = require("../models/Message");
 const sendNotification = require("../utils/sendNotification");
 
 const sendFollowRequest = async (req, res) => {
@@ -66,20 +67,17 @@ const sendFollowRequest = async (req, res) => {
 
     // IF RECEIVER IS ALREADY FOLLOWING SENDER - INSTANT MUTUAL FOLLOW
     if (receiverIsFollowingSender) {
-      // Add each other to following/followers
       sender.following.push(receiverId);
       receiver.followers.push(senderId);
 
       await sender.save();
       await receiver.save();
 
-      // Remove any pending requests
       receiver.followRequests = receiver.followRequests.filter(
         (id) => id.toString() !== senderId
       );
       await receiver.save();
 
-      // Create notification for mutual follow
       await Notification.create({
         sender: senderId,
         receiver: receiverId,
@@ -87,7 +85,6 @@ const sendFollowRequest = async (req, res) => {
         message: `${sender.name} followed you back`,
       });
 
-      // Also notify the sender that they got followed back
       await Notification.create({
         sender: receiverId,
         receiver: senderId,
@@ -95,7 +92,6 @@ const sendFollowRequest = async (req, res) => {
         message: `${receiver.name} accepted your follow request`,
       });
 
-      // Send socket events
       if (global.io) {
         global.io.to(receiverId).emit("newNotification", {
           senderName: sender.name,
@@ -131,7 +127,6 @@ const sendFollowRequest = async (req, res) => {
       });
     }
 
-    // NORMAL FOLLOW REQUEST (receiver is not following sender)
     receiver.followRequests.push(senderId);
     await receiver.save();
 
@@ -190,13 +185,11 @@ const getFollowRequests = async (req, res) => {
       });
     }
 
-    // Populate follow requests but filter out blocked users
     const populatedUser = await User.findById(userId).populate(
       "followRequests",
       "_id name email picture username bio"
     );
 
-    // Filter out any users that the current user has blocked
     const filteredRequests = populatedUser.followRequests.filter(
       (requester) => !user.blockedUsers.some(
         (blockedId) => blockedId.toString() === requester._id.toString()
@@ -225,7 +218,6 @@ const acceptFollowRequest = async (req, res) => {
       });
     }
 
-    // BLOCK CHECK - Check if current user has blocked requester
     if (currentUser.blockedUsers.some((id) => id.toString() === requesterId)) {
       return res.status(403).json({
         success: false,
@@ -233,7 +225,6 @@ const acceptFollowRequest = async (req, res) => {
       });
     }
 
-    // BLOCK CHECK - Check if requester has blocked current user
     if (requester.blockedUsers.some((id) => id.toString() === currentUserId)) {
       return res.status(403).json({
         success: false,
@@ -241,19 +232,16 @@ const acceptFollowRequest = async (req, res) => {
       });
     }
 
-    // Remove from followRequests
     currentUser.followRequests = currentUser.followRequests.filter(
       (id) => id.toString() !== requesterId
     );
 
-    // Add to followers and following
     currentUser.followers.push(requesterId);
     requester.following.push(currentUserId);
 
     await currentUser.save();
     await requester.save();
 
-    // Create notification for requester
     await Notification.create({
       sender: currentUserId,
       receiver: requesterId,
@@ -261,7 +249,6 @@ const acceptFollowRequest = async (req, res) => {
       message: `${currentUser.name} accepted your follow request`,
     });
 
-    // Create notification for current user (follow back)
     await Notification.create({
       sender: requesterId,
       receiver: currentUserId,
@@ -294,7 +281,6 @@ const acceptFollowRequest = async (req, res) => {
         createdAt: new Date(),
       });
 
-      // Emit to both users
       global.io.to(requesterId).emit("followAccepted", {
         acceptedBy: currentUserId,
         acceptedUser: requesterId,
@@ -336,7 +322,6 @@ const rejectFollowRequest = async (req, res) => {
 
     await currentUser.save();
 
-    // Create notification for rejection
     await Notification.create({
       sender: currentUserId,
       receiver: requesterId,
@@ -383,7 +368,6 @@ const getAcceptedUsers = async (req, res) => {
       "_id name email picture username bio"
     );
 
-    // Filter out blocked users
     const filteredFollowing = populatedUser.following.filter(
       (followedUser) => !user.blockedUsers.some(
         (blockedId) => blockedId.toString() === followedUser._id.toString()
@@ -416,7 +400,6 @@ const getFollowers = async (req, res) => {
       "_id name email picture username bio"
     );
 
-    // Filter out blocked users
     const filteredFollowers = populatedUser.followers.filter(
       (follower) => !user.blockedUsers.some(
         (blockedId) => blockedId.toString() === follower._id.toString()
@@ -448,7 +431,6 @@ const getAllConnections = async (req, res) => {
       .populate("following", "_id name email picture username bio")
       .populate("followers", "_id name email picture username bio");
 
-    // Combine both arrays and remove duplicates, then filter out blocked users
     const connections = [...populatedUser.following, ...populatedUser.followers];
     const uniqueConnections = connections.filter(
       (user, index, self) => 
@@ -480,7 +462,6 @@ const unfollowUser = async (req, res) => {
       });
     }
 
-    // Check if following
     const isFollowing = currentUser.following.some(
       (id) => id.toString() === unfollowId
     );
@@ -491,7 +472,6 @@ const unfollowUser = async (req, res) => {
       });
     }
 
-    // Remove from following and followers
     currentUser.following = currentUser.following.filter(
       (id) => id.toString() !== unfollowId
     );
@@ -499,7 +479,6 @@ const unfollowUser = async (req, res) => {
       (id) => id.toString() !== currentUserId
     );
 
-    // Also remove from followRequests if exists
     targetUser.followRequests = targetUser.followRequests.filter(
       (id) => id.toString() !== currentUserId
     );
@@ -507,7 +486,6 @@ const unfollowUser = async (req, res) => {
     await currentUser.save();
     await targetUser.save();
 
-    // Create notification for unfollow
     await Notification.create({
       sender: currentUserId,
       receiver: unfollowId,
@@ -563,7 +541,6 @@ const checkFollowingStatus = async (req, res) => {
       (id) => id.toString() === targetUserId
     );
 
-    // Check if blocked
     const isBlocked = currentUser.blockedUsers.some(
       (id) => id.toString() === targetUserId
     );
@@ -597,7 +574,6 @@ const getMutualFriends = async (req, res) => {
       .populate("following", "_id name email picture username bio")
       .populate("followers", "_id name email picture username bio");
 
-    // Get mutual friends and filter out blocked users
     const mutualFriends = populatedUser.following.filter((followedUser) =>
       populatedUser.followers.some(
         (follower) => 
@@ -617,7 +593,540 @@ const getMutualFriends = async (req, res) => {
   }
 };
 
+// ========== FIXED BLOCK FUNCTIONS ==========
+
+const blockUser = async (req, res) => {
+  try {
+    const { userId, blockedUserId } = req.body;
+
+    if (userId === blockedUserId) {
+      return res.status(400).json({
+        message: "You cannot block yourself.",
+      });
+    }
+
+    const user = await User.findById(userId);
+    const blockedUser = await User.findById(blockedUserId);
+
+    if (!user || !blockedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // Check if already blocked
+    if (user.blockedUsers.some(id => id.toString() === blockedUserId)) {
+      return res.status(400).json({
+        message: "User already blocked",
+      });
+    }
+
+    // ========== CRITICAL FIX: Store previous connection BEFORE blocking ==========
+    // Check if they are connected (following each other)
+    const userFollowsBlocked = user.following.some(id => id.toString() === blockedUserId);
+    const blockedFollowsUser = blockedUser.following.some(id => id.toString() === userId);
+    const areConnected = userFollowsBlocked || blockedFollowsUser;
+
+    // Store previous connection in a separate field
+    if (areConnected) {
+      // Initialize previousConnections if it doesn't exist
+      if (!user.previousConnections) user.previousConnections = [];
+      if (!blockedUser.previousConnections) blockedUser.previousConnections = [];
+
+      // Store connection for both users
+      if (!user.previousConnections.some(id => id.toString() === blockedUserId)) {
+        user.previousConnections.push(blockedUserId);
+      }
+      if (!blockedUser.previousConnections.some(id => id.toString() === userId)) {
+        blockedUser.previousConnections.push(userId);
+      }
+
+      console.log(`✅ Stored previous connection between ${user.name} and ${blockedUser.name}`);
+    }
+
+    // ========== FIX: DO NOT DELETE FOLLOW RELATIONSHIP ==========
+    // Instead, we just add to blockedUsers array
+    // The follow relationship stays intact but is hidden/disabled
+
+    // Add to blocked list ONLY - DON'T remove from following/followers
+    user.blockedUsers.push(blockedUserId);
+    await user.save();
+
+    // Remove any pending follow requests (these are temporary)
+    user.followRequests = user.followRequests.filter(
+      (id) => id.toString() !== blockedUserId
+    );
+    await blockedUser.updateOne({
+      $pull: {
+        followRequests: userId,
+      },
+    });
+
+    // Remove any blocked messages from this user if they sent one before
+    if (blockedUser.blockedMessages) {
+      blockedUser.blockedMessages = blockedUser.blockedMessages.filter(
+        (bm) => bm.blockerId.toString() !== userId
+      );
+      await blockedUser.save();
+    }
+
+    // ===== SOCKET EVENTS =====
+    if (global.io) {
+      // Notify blocked user
+      global.io.to(blockedUserId).emit("userBlocked", {
+        by: userId,
+        byName: user.name,
+        message: `${user.name} has blocked you`,
+        blocked: true,
+        timestamp: new Date(),
+        connectionPreserved: areConnected, // Let frontend know connection is preserved
+      });
+
+      // Notify blocker
+      global.io.to(userId).emit("userBlockedSuccess", {
+        blockedUser: blockedUserId,
+        blockedName: blockedUser.name,
+        timestamp: new Date(),
+        connectionPreserved: areConnected,
+      });
+
+      // Update chat list for both users - show blocked but connection preserved
+      global.io.to(blockedUserId).emit("chatListUpdated", {
+        userId: blockedUserId,
+        chatWith: userId,
+        blocked: true,
+        blockedBy: userId,
+        connectionPreserved: areConnected,
+        lastMessage: `${user.name} has blocked you`,
+        lastMessageTime: new Date(),
+      });
+
+      global.io.to(userId).emit("chatListUpdated", {
+        userId: userId,
+        chatWith: blockedUserId,
+        blocked: true,
+        blockedBy: userId,
+        connectionPreserved: areConnected,
+        lastMessage: `You blocked ${blockedUser.name}`,
+        lastMessageTime: new Date(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User blocked successfully.",
+      data: {
+        blockedUserId,
+        blockedName: blockedUser.name,
+        connectionPreserved: areConnected,
+      },
+    });
+  } catch (err) {
+    console.error("Block user error:", err);
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+// ========== FIXED UNBLOCK FUNCTION - RESTORES CONNECTION ==========
+const unblockUser = async (req, res) => {
+  try {
+    const { userId, blockedUserId } = req.body;
+
+    const user = await User.findById(userId);
+    const unblockedUser = await User.findById(blockedUserId);
+
+    if (!user || !unblockedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // ========== Check if they were previously connected ==========
+    const wasConnected = user.previousConnections && 
+      user.previousConnections.some(id => id.toString() === blockedUserId);
+
+    // Remove from blocked list
+    user.blockedUsers = user.blockedUsers.filter(
+      (id) => id.toString() !== blockedUserId
+    );
+
+    // ========== RESTORE CONNECTION IF THEY WERE CONNECTED ==========
+    if (wasConnected) {
+      console.log(`🔄 Restoring connection between ${user.name} and ${unblockedUser.name}`);
+
+      // Add to following/followers if not already there
+      if (!user.following.some(id => id.toString() === blockedUserId)) {
+        user.following.push(blockedUserId);
+      }
+      if (!unblockedUser.following.some(id => id.toString() === userId)) {
+        unblockedUser.following.push(userId);
+      }
+
+      // Also add to followers
+      if (!user.followers.some(id => id.toString() === blockedUserId)) {
+        user.followers.push(blockedUserId);
+      }
+      if (!unblockedUser.followers.some(id => id.toString() === userId)) {
+        unblockedUser.followers.push(userId);
+      }
+
+      // Remove from previousConnections since it's restored
+      user.previousConnections = user.previousConnections.filter(
+        (id) => id.toString() !== blockedUserId
+      );
+      unblockedUser.previousConnections = unblockedUser.previousConnections.filter(
+        (id) => id.toString() !== userId
+      );
+
+      console.log(`✅ Connection restored between ${user.name} and ${unblockedUser.name}`);
+    }
+
+    await user.save();
+    await unblockedUser.save();
+
+    // ===== SOCKET EVENTS =====
+    if (global.io) {
+      // Notify unblocked user
+      global.io.to(blockedUserId).emit("userUnblocked", {
+        by: userId,
+        byName: user.name,
+        message: wasConnected 
+          ? `${user.name} has unblocked you. Your connection has been restored! You can chat again.`
+          : `${user.name} has unblocked you. You can chat again!`,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        timestamp: new Date(),
+      });
+
+      // Notify blocker
+      global.io.to(userId).emit("userUnblockedSuccess", {
+        unblockedUser: blockedUserId,
+        unblockedName: unblockedUser.name,
+        connectionRestored: wasConnected,
+        timestamp: new Date(),
+      });
+
+      // Update chat list - REMOVE BLOCKED STATUS
+      global.io.to(blockedUserId).emit("chatListUpdated", {
+        userId: blockedUserId,
+        chatWith: userId,
+        blocked: false,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        lastMessage: wasConnected 
+          ? `${user.name} has unblocked you. Your connection has been restored!`
+          : `${user.name} has unblocked you. You can chat now!`,
+        lastMessageTime: new Date(),
+      });
+
+      global.io.to(userId).emit("chatListUpdated", {
+        userId: userId,
+        chatWith: blockedUserId,
+        blocked: false,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        lastMessage: wasConnected 
+          ? `You unblocked ${unblockedUser.name}. Your connection has been restored!`
+          : `You unblocked ${unblockedUser.name}. You can chat now!`,
+        lastMessageTime: new Date(),
+      });
+
+      // Notify both that chat is restored
+      global.io.to(userId).emit("chatRestored", {
+        with: blockedUserId,
+        name: unblockedUser.name,
+        connectionRestored: wasConnected,
+      });
+      
+      global.io.to(blockedUserId).emit("chatRestored", {
+        with: userId,
+        name: user.name,
+        connectionRestored: wasConnected,
+      });
+
+      // If connection was restored, emit follow restored event
+      if (wasConnected) {
+        global.io.to(userId).emit("followRestored", {
+          with: blockedUserId,
+          name: unblockedUser.name,
+          message: `Your connection with ${unblockedUser.name} has been restored!`,
+        });
+        
+        global.io.to(blockedUserId).emit("followRestored", {
+          with: userId,
+          name: user.name,
+          message: `Your connection with ${user.name} has been restored!`,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: wasConnected 
+        ? "User unblocked successfully. Connection restored!"
+        : "User unblocked successfully.",
+      data: {
+        unblockedUserId: blockedUserId,
+        unblockedName: unblockedUser.name,
+        connectionRestored: wasConnected,
+      },
+    });
+  } catch (err) {
+    console.error("Unblock user error:", err);
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+const getBlockedUsers = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id)
+      .populate("blockedUsers", "name email picture username bio");
+
+    // Check if any blocked users sent one-time messages
+    const blockedUsersWithStatus = await Promise.all(
+      user.blockedUsers.map(async (blockedUser) => {
+        // Check if this user sent a blocked message
+        const blockedUserDoc = await User.findById(blockedUser._id);
+        let blockedMessage = null;
+        if (blockedUserDoc && blockedUserDoc.blockedMessages) {
+          const msg = blockedUserDoc.blockedMessages.find(
+            (bm) => bm.blockerId.toString() === id
+          );
+          if (msg) blockedMessage = msg;
+        }
+
+        // Check if they were previously connected
+        const wasConnected = user.previousConnections && 
+          user.previousConnections.some(pid => pid.toString() === blockedUser._id.toString());
+
+        return {
+          ...blockedUser.toObject(),
+          oneTimeSent: !!blockedMessage,
+          oneTimeMessage: blockedMessage?.message || null,
+          oneTimeSentAt: blockedMessage?.sentAt || null,
+          wasConnected: wasConnected || false,
+          connectionPreserved: wasConnected || false,
+        };
+      })
+    );
+
+    res.json(blockedUsersWithStatus);
+  } catch (err) {
+    console.error("Get blocked users error:", err);
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
+// ========== USER FUNCTIONS ==========
+
+const getUsers = async (req, res) => {
+  try {
+    const currentUserId = req.query.currentUserId;
+
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+    });
+
+    const currentUser = await User.findById(currentUserId);
+
+    const usersWithLastMessage = await Promise.all(
+      users.map(async (user) => {
+        const isBlocked = currentUser?.blockedUsers?.some(
+          (id) => id.toString() === user._id.toString()
+        ) || false;
+
+        const isBlockedByUser = user.blockedUsers?.some(
+          (id) => id.toString() === currentUserId
+        ) || false;
+
+        // Check for one-time message
+        let oneTimeMessage = null;
+        if (isBlockedByUser && user.blockedMessages) {
+          const blockedMsg = user.blockedMessages.find(
+            (bm) => bm.blockerId.toString() === currentUserId
+          );
+          if (blockedMsg) oneTimeMessage = blockedMsg;
+        }
+
+        const lastMessage = await Message.findOne({
+          $or: [
+            { senderId: currentUserId, receiverId: user._id },
+            { senderId: user._id, receiverId: currentUserId },
+          ],
+        }).sort({ createdAt: -1 });
+
+        const messageCount = await Message.countDocuments({
+          senderId: user._id,
+          receiverId: currentUserId,
+        });
+
+        return {
+          ...user.toObject(),
+          lastMessage: oneTimeMessage?.message || lastMessage?.message || "",
+          lastMessageTime: oneTimeMessage?.sentAt || lastMessage?.createdAt || null,
+          messageCount,
+          isBlocked: isBlocked || isBlockedByUser,
+          blockedBy: isBlocked ? currentUserId : isBlockedByUser ? user._id : null,
+          oneTimeSent: !!oneTimeMessage,
+        };
+      })
+    );
+
+    res.json(usersWithLastMessage);
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const updateProfile = async (req, res) => {
+  try {
+    const { id, name, picture } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { name, picture },
+      { new: true }
+    );
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const searchUsers = async (req, res) => {
+  try {
+    const { q, currentUserId } = req.query;
+
+    if (!q) {
+      return res.json([]);
+    }
+
+    const currentUser = await User.findById(currentUserId);
+
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+      $or: [
+        { name: { $regex: q, $options: "i" } },
+        { email: { $regex: q, $options: "i" } },
+      ],
+    }).select("_id name email picture username bio");
+
+    const usersWithStatus = users.map((user) => ({
+      ...user.toObject(),
+      isFollowing: currentUser?.following?.some(
+        (id) => id.toString() === user._id.toString()
+      ) || false,
+      requestSent: currentUser?.followRequests?.some(
+        (id) => id.toString() === user._id.toString()
+      ) || false,
+      isBlocked: currentUser?.blockedUsers?.some(
+        (id) => id.toString() === user._id.toString()
+      ) || false,
+      wasConnected: currentUser?.previousConnections?.some(
+        (id) => id.toString() === user._id.toString()
+      ) || false,
+    }));
+
+    res.json(usersWithStatus);
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id).select('-followRequests');
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const checkBlockStatus = async (req, res) => {
+  try {
+    const { userId, targetUserId } = req.params;
+
+    const user = await User.findById(userId);
+    const targetUser = await User.findById(targetUserId);
+
+    if (!user || !targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const userBlockedTarget = user.blockedUsers.some(
+      (id) => id.toString() === targetUserId
+    );
+    const targetBlockedUser = targetUser.blockedUsers.some(
+      (id) => id.toString() === userId
+    );
+
+    // Check if they were previously connected
+    const wasConnected = user.previousConnections && 
+      user.previousConnections.some(id => id.toString() === targetUserId);
+
+    let oneTimeMessage = null;
+    let oneTimeSent = false;
+    if (targetBlockedUser && targetUser.blockedMessages) {
+      const blockedMsg = targetUser.blockedMessages.find(
+        (bm) => bm.blockerId.toString() === userId
+      );
+      if (blockedMsg) {
+        oneTimeMessage = blockedMsg.message;
+        oneTimeSent = true;
+      }
+    }
+
+    res.json({
+      blocked: userBlockedTarget || targetBlockedUser,
+      blockedBy: userBlockedTarget ? userId : targetBlockedUser ? targetUserId : null,
+      oneTimeSent: oneTimeSent,
+      oneTimeMessage: oneTimeMessage,
+      canChat: !(userBlockedTarget || targetBlockedUser),
+      wasConnected: wasConnected || false,
+      // Check if they're still following each other (if not blocked)
+      isFollowing: !(userBlockedTarget || targetBlockedUser) && user.following.some(id => id.toString() === targetUserId),
+      isFollower: !(userBlockedTarget || targetBlockedUser) && user.followers.some(id => id.toString() === targetUserId),
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
+  getUsers,
+  updateProfile,
+  searchUsers,
+  getUserById,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
   sendFollowRequest,
   getFollowRequests,
   acceptFollowRequest,
@@ -628,4 +1137,5 @@ module.exports = {
   unfollowUser,
   checkFollowingStatus,
   getMutualFriends,
+  checkBlockStatus,
 };

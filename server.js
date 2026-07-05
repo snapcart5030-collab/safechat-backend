@@ -132,12 +132,98 @@ io.on("connection", (socket) => {
     });
   });
 
-  // User unblocks someone - PRESERVES FOLLOW RELATIONSHIP
-  socket.on("unblockUser", (data) => {
-    const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
+ // In server.js, add this socket event handler
+// User unblocks someone - RESTORES connection and chat
+socket.on("unblockUser", async (data) => {
+  const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
 
-    console.log(`🔓 ${unblockerName} unblocked ${unblockedName}`);
+  console.log(`🔓 ${unblockerName} unblocked ${unblockedName}`);
 
+  try {
+    const User = require("../models/User");
+    const unblocker = await User.findById(unblockerId);
+    const unblocked = await User.findById(unblockedId);
+
+    const wasConnected = unblocker.previousConnections && 
+      unblocker.previousConnections.some(id => id.toString() === unblockedId);
+
+    // Emit to unblocked user
+    io.to(unblockedId).emit("userUnblocked", {
+      by: unblockerId,
+      byName: unblockerName,
+      message: wasConnected 
+        ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+        : `${unblockerName} has unblocked you. You can chat again!`,
+      unblocked: true,
+      connectionRestored: wasConnected,
+      timestamp: new Date(),
+    });
+
+    // Emit to unblocker
+    io.to(unblockerId).emit("userUnblockedSuccess", {
+      unblockedUser: unblockedId,
+      unblockedName: unblockedName,
+      connectionRestored: wasConnected,
+      timestamp: new Date(),
+    });
+
+    // Emit chat list updates
+    io.to(unblockedId).emit("chatListUpdated", {
+      userId: unblockedId,
+      chatWith: unblockerId,
+      blocked: false,
+      unblocked: true,
+      connectionRestored: wasConnected,
+      lastMessage: wasConnected 
+        ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+        : `${unblockerName} has unblocked you. You can chat now!`,
+      lastMessageTime: new Date(),
+    });
+
+    io.to(unblockerId).emit("chatListUpdated", {
+      userId: unblockerId,
+      chatWith: unblockedId,
+      blocked: false,
+      unblocked: true,
+      connectionRestored: wasConnected,
+      lastMessage: wasConnected 
+        ? `You unblocked ${unblockedName}. Your connection has been restored!` 
+        : `You unblocked ${unblockedName}. You can chat now!`,
+      lastMessageTime: new Date(),
+    });
+
+    // Emit chat restored events
+    io.to(unblockerId).emit("chatRestored", {
+      with: unblockedId,
+      name: unblockedName,
+      connectionRestored: wasConnected,
+    });
+
+    io.to(unblockedId).emit("chatRestored", {
+      with: unblockerId,
+      name: unblockerName,
+      connectionRestored: wasConnected,
+    });
+
+    // If connection was restored, emit follow restored event
+    if (wasConnected) {
+      io.to(unblockerId).emit("followRestored", {
+        with: unblockedId,
+        name: unblockedName,
+        message: `Your connection with ${unblockedName} has been restored!`,
+      });
+      
+      io.to(unblockedId).emit("followRestored", {
+        with: unblockerId,
+        name: unblockerName,
+        message: `Your connection with ${unblockerName} has been restored!`,
+      });
+    }
+
+  } catch (error) {
+    console.error("Error in unblock socket event:", error);
+    
+    // Fallback: still emit basic unblock events
     io.to(unblockedId).emit("userUnblocked", {
       by: unblockerId,
       byName: unblockerName,
@@ -151,35 +237,8 @@ io.on("connection", (socket) => {
       unblockedName: unblockedName,
       timestamp: new Date(),
     });
-
-    io.to(unblockedId).emit("chatListUpdated", {
-      userId: unblockedId,
-      chatWith: unblockerId,
-      blocked: false,
-      unblocked: true,
-      lastMessage: `${unblockerName} has unblocked you. You can chat now!`,
-      lastMessageTime: new Date(),
-    });
-
-    io.to(unblockerId).emit("chatListUpdated", {
-      userId: unblockerId,
-      chatWith: unblockedId,
-      blocked: false,
-      unblocked: true,
-      lastMessage: `You unblocked ${unblockedName}. You can chat now!`,
-      lastMessageTime: new Date(),
-    });
-
-    io.to(unblockerId).emit("chatRestored", {
-      with: unblockedId,
-      name: unblockedName,
-    });
-
-    io.to(unblockedId).emit("chatRestored", {
-      with: unblockerId,
-      name: unblockerName,
-    });
-  });
+  }
+});
 
   // Blocked user sends one-time message
   socket.on("blockedUserMessage", (data) => {
