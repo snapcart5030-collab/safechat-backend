@@ -11,7 +11,17 @@ const sendMessage = async (req, res) => {
   console.log("================================");
 
   try {
-    const { senderId, receiverId, message } = req.body;
+    const { receiverId, message, fileUrl, fileName, fileType, fileSize, replyTo, clientMessageId } = req.body;
+    const senderId = req.user._id.toString();
+
+    if (!receiverId || (!message?.trim() && !fileUrl)) {
+      return res.status(400).json({ success: false, message: "A recipient and message or attachment are required" });
+    }
+
+    if (clientMessageId) {
+      const existing = await Message.findOne({ senderId, clientMessageId });
+      if (existing) return res.status(200).json(existing);
+    }
 
     const senderUser = await User.findById(senderId);
     const receiverUser = await User.findById(receiverId);
@@ -37,112 +47,14 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    // ========== BLOCK CHECK - Receiver blocked Sender ==========
+    // A block is a communication gate only.  It must never alter a follow
+    // relationship or create a "waiting" message that is delivered later.
     if (
       receiverUser.blockedUsers.some(
         (id) => id.toString() === senderId
       )
     ) {
-      // Check if this user already sent a one-time message
-      const existingBlockedMessage = receiverUser.blockedMessages.find(
-        (bm) => bm.blockerId.toString() === senderId
-      );
-
-      // If one-time message already sent
-      if (existingBlockedMessage) {
-        return res.status(403).json({
-          success: false,
-          message: "You are blocked. You already sent your one-time message.",
-          blocked: true,
-          blockedBy: receiverId,
-          oneTimeSent: true,
-          oneTimeMessage: existingBlockedMessage.message,
-        });
-      }
-
-      // Allow ONE message (first time)
-      const newMessage = await Message.create({
-        senderId,
-        receiverId,
-        message,
-        seen: false,
-        isRead: false,
-        delivered: false,
-        createdAt: new Date(),
-        autoDeleteAt: new Date(Date.now() + 30000),
-        status: "blocked_waiting",
-      });
-
-      // Save the one-time message in receiver's blockedMessages array
-      receiverUser.blockedMessages.push({
-        blockerId: senderId,
-        message: message,
-        sentAt: new Date(),
-        isRead: false,
-      });
-      await receiverUser.save();
-
-      // Send notification to receiver (blocker) about the message
-      if (receiverUser && receiverUser.fcmToken) {
-        await sendNotification(
-          receiverUser.fcmToken,
-          "Blocked User Messaged You",
-          `${senderUser.name} sent a message while blocked: ${message.substring(0, 50)}...`
-        );
-      }
-
-      // Socket events
-      if (global.io) {
-        // Send to receiver (blocker) - they get the message
-        global.io.to(receiverId).emit("receiveMessage", newMessage);
-        
-        // Send to sender (blocked) - they see "waiting" status
-        global.io.to(senderId).emit("receiveMessage", newMessage);
-        
-        // Notify receiver that blocked user sent a message
-        global.io.to(receiverId).emit("blockedUserMessaged", {
-          from: senderId,
-          fromName: senderUser.name,
-          message: message,
-          timestamp: new Date(),
-          oneTime: true,
-        });
-
-        // Notify sender that message is waiting
-        global.io.to(senderId).emit("messageWaitingForUnblock", {
-          to: receiverId,
-          message: message,
-          timestamp: new Date(),
-          status: "waiting_for_unblock",
-        });
-
-        // Chat list updates
-        global.io.to(senderId).emit("chatListUpdated", {
-          userId: senderId,
-          chatWith: receiverId,
-          lastMessage: message,
-          lastMessageTime: new Date(),
-          blocked: true,
-          status: "waiting_for_unblock",
-        });
-
-        global.io.to(receiverId).emit("chatListUpdated", {
-          userId: receiverId,
-          chatWith: senderId,
-          lastMessage: message,
-          lastMessageTime: new Date(),
-          blocked: true,
-          fromBlockedUser: true,
-        });
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: "Message sent (waiting for unblock)",
-        status: "blocked_waiting",
-        oneTimeSent: true,
-        data: newMessage,
-      });
+      return res.status(403).json({ success: false, message: "You cannot message this user while blocked.", blocked: true, blockedBy: receiverId });
     }
 
     // ========== NORMAL CHAT FLOW (Not Blocked) ==========
@@ -157,20 +69,29 @@ const sendMessage = async (req, res) => {
       });
     }
 
+    // Check if receiver has active sockets currently
+    const isOnline = global.io?.sockets.adapter.rooms.get(receiverId)?.size > 0;
+
     const newMessage = await Message.create({
       senderId,
       receiverId,
-      message,
+      message: message || "",
+      fileUrl: fileUrl || null,
+      fileName: fileName || null,
+      fileType: fileType || null,
+      fileSize: fileSize || null,
+      replyTo: replyTo || null,
+      clientMessageId: clientMessageId || null,
       seen: false,
       isRead: false,
-      delivered: false,
+      delivered: isOnline,
       createdAt: new Date(),
       autoDeleteAt: new Date(Date.now() + 30000),
-      status: "sent",
+      status: isOnline ? "delivered" : "sent",
     });
 
     if (receiverUser && receiverUser.fcmToken) {
-      await sendNotification(receiverUser.fcmToken, "New Message", message);
+      await sendNotification(receiverUser.fcmToken, "New Message", message || `Sent a ${fileType}`);
     }
 
     if (global.io) {
@@ -178,13 +99,13 @@ const sendMessage = async (req, res) => {
       global.io.to(senderId).emit("chatListUpdated", {
         userId: senderId,
         chatWith: receiverId,
-        lastMessage: message,
+        lastMessage: message || `[${fileType}]`,
         lastMessageTime: new Date(),
       });
       global.io.to(receiverId).emit("chatListUpdated", {
         userId: receiverId,
         chatWith: senderId,
-        lastMessage: message,
+        lastMessage: message || `[${fileType}]`,
         lastMessageTime: new Date(),
       });
     }
@@ -600,6 +521,143 @@ const checkBlockStatus = async (req, res) => {
   }
 };
 
+const uploadAttachment = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
+    
+    const mime = req.file.mimetype;
+    let fileType = "document";
+    if (mime.startsWith("image/")) {
+      fileType = "image";
+    } else if (mime.startsWith("video/")) {
+      fileType = "video";
+    } else if (mime.startsWith("audio/")) {
+      fileType = "audio";
+    }
+
+    res.json({
+      success: true,
+      fileUrl: req.file.path,
+      fileName: req.file.originalname,
+      fileType,
+      fileSize: req.file.size,
+    });
+  } catch (error) {
+    console.error("Upload attachment error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const reactToMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { userId, emoji } = req.body;
+
+    const msg = await Message.findById(messageId);
+    if (!msg) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    msg.reactions = msg.reactions.filter((r) => r.userId.toString() !== userId);
+
+    if (emoji) {
+      msg.reactions.push({ userId, emoji });
+    }
+
+    await msg.save();
+
+    if (global.io) {
+      global.io.to(msg.senderId.toString()).emit("messageReacted", { messageId, reactions: msg.reactions });
+      global.io.to(msg.receiverId.toString()).emit("messageReacted", { messageId, reactions: msg.reactions });
+    }
+
+    res.json({ success: true, reactions: msg.reactions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const editMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { text, userId } = req.body;
+
+    const msg = await Message.findById(messageId);
+    if (!msg) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    if (msg.senderId.toString() !== userId) {
+      return res.status(403).json({ success: false, message: "Not authorized to edit this message" });
+    }
+
+    msg.message = text;
+    msg.isEdited = true;
+    await msg.save();
+
+    if (global.io) {
+      global.io.to(msg.senderId.toString()).emit("messageEdited", { messageId, text, isEdited: true });
+      global.io.to(msg.receiverId.toString()).emit("messageEdited", { messageId, text, isEdited: true });
+    }
+
+    res.json({ success: true, message: msg });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const starMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { isStarred } = req.body;
+
+    const msg = await Message.findByIdAndUpdate(messageId, { isStarred }, { new: true });
+    if (!msg) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    res.json({ success: true, message: msg });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const pinMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { isPinned } = req.body;
+
+    const msg = await Message.findByIdAndUpdate(messageId, { isPinned }, { new: true });
+    if (!msg) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    res.json({ success: true, message: msg });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getSharedMedia = async (req, res) => {
+  try {
+    const { userId, chatWithId } = req.params;
+
+    const mediaMessages = await Message.find({
+      $or: [
+        { senderId: userId, receiverId: chatWithId },
+        { senderId: chatWithId, receiverId: userId },
+      ],
+      fileUrl: { $ne: null },
+    }).sort({ createdAt: -1 });
+
+    res.json(mediaMessages);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -611,4 +669,10 @@ module.exports = {
   deleteMessage,
   deliverOfflineMessages,
   checkBlockStatus,
+  uploadAttachment,
+  reactToMessage,
+  editMessage,
+  starMessage,
+  pinMessage,
+  getSharedMedia,
 };

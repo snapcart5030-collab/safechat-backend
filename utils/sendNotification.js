@@ -16,6 +16,10 @@ const sendNotification = async (
         body,
       },
 
+      data: {
+        click_action: "https://safeechats.web.app",
+      },
+
       webpush: {
         fcmOptions: {
           link: "https://safeechats.web.app",
@@ -23,6 +27,8 @@ const sendNotification = async (
 
         notification: {
           icon: "/pwa-192x192.png",
+          tag: "safechat-notification",
+          renotify: false,
         },
       },
     };

@@ -14,7 +14,7 @@ const messageSchema = new mongoose.Schema(
     },
     message: {
       type: String,
-      required: true,
+      default: "",
     },
     seen: {
       type: Boolean,
@@ -36,12 +36,75 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // NEW: Track message status for blocked users
     status: {
       type: String,
       enum: ["sent", "delivered", "read", "blocked_waiting"],
       default: "sent",
     },
+    clientMessageId: {
+      type: String,
+      default: null,
+    },
+    // ATTACHMENT SHARING
+    fileUrl: {
+      type: String,
+      default: null,
+    },
+    fileName: {
+      type: String,
+      default: null,
+    },
+    fileType: {
+      type: String,
+      enum: ["image", "video", "audio", "document", null],
+      default: null,
+    },
+    fileSize: {
+      type: Number,
+      default: null,
+    },
+    // REACTIONS & REPLIES
+    reactions: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        emoji: {
+          type: String,
+        },
+      },
+    ],
+    replyTo: {
+      messageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Message",
+      },
+      text: {
+        type: String,
+      },
+      senderName: {
+        type: String,
+      },
+    },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
+    isStarred: {
+      type: Boolean,
+      default: false,
+    },
+    deletedForUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   {
     timestamps: true,
@@ -53,5 +116,7 @@ messageSchema.index({ senderId: 1, receiverId: 1 });
 messageSchema.index({ receiverId: 1, isRead: 1 });
 messageSchema.index({ autoDeleteAt: 1 });
 messageSchema.index({ status: 1 });
+messageSchema.index({ senderId: 1, clientMessageId: 1 }, { unique: true, sparse: true });
+messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Message", messageSchema);

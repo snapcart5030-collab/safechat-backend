@@ -92,6 +92,53 @@ const userSchema = new mongoose.Schema(
         },
       },
     ],
+    
+    // WHATSAPP-STYLE EXTRA FIELDS
+    username: {
+      type: String,
+      index: { unique: true, sparse: true },
+    },
+    bio: {
+      type: String,
+      default: "Hey there! I am using SafeChat 👋",
+    },
+    phone: {
+      type: String,
+      default: "",
+    },
+    dob: {
+      type: String,
+      default: "",
+    },
+    location: {
+      type: String,
+      default: "",
+    },
+    privacySettings: {
+      lastSeen: {
+        type: String,
+        enum: ["everyone", "followers", "nobody"],
+        default: "everyone",
+      },
+      profilePhoto: {
+        type: String,
+        enum: ["everyone", "followers", "nobody"],
+        default: "everyone",
+      },
+      status: {
+        type: String,
+        enum: ["everyone", "followers", "nobody"],
+        default: "everyone",
+      },
+    },
+    lastSeen: {
+      type: Date,
+      default: Date.now,
+    },
+    onlineStatus: {
+      type: String,
+      default: "Available",
+    },
   },
   {
     timestamps: true,

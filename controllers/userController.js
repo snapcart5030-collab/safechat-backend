@@ -597,7 +597,8 @@ const getMutualFriends = async (req, res) => {
 
 const blockUser = async (req, res) => {
   try {
-    const { userId, blockedUserId } = req.body;
+    const { blockedUserId } = req.body;
+    const userId = req.user._id.toString();
 
     if (userId === blockedUserId) {
       return res.status(400).json({
@@ -615,41 +616,15 @@ const blockUser = async (req, res) => {
     }
 
     // Check if already blocked
-    if (user.blockedUsers.includes(blockedUserId)) {
+    if (user.blockedUsers.some((id) => id.toString() === blockedUserId)) {
       return res.status(400).json({
         message: "User already blocked",
       });
     }
 
-    // Add to blocked list
-    user.blockedUsers.push(blockedUserId);
-
-    // Remove follow relationship
-    user.following = user.following.filter(
-      (id) => id.toString() !== blockedUserId
-    );
-    user.followers = user.followers.filter(
-      (id) => id.toString() !== blockedUserId
-    );
-
-    await User.findByIdAndUpdate(blockedUserId, {
-      $pull: {
-        followers: userId,
-        following: userId,
-        followRequests: userId,
-      },
-    });
-
-    // Remove any blocked messages from this user if they sent one before
-    const blockedUserDoc = await User.findById(blockedUserId);
-    if (blockedUserDoc) {
-      blockedUserDoc.blockedMessages = blockedUserDoc.blockedMessages.filter(
-        (bm) => bm.blockerId.toString() !== userId
-      );
-      await blockedUserDoc.save();
-    }
-
-    await user.save();
+    // Blocking only gates communication. Follow/follower records deliberately
+    // remain intact so an unblock restores the established connection.
+    await User.updateOne({ _id: userId }, { $addToSet: { blockedUsers: blockedUserId } });
 
     // ===== SOCKET EVENTS =====
     if (global.io) {
@@ -707,7 +682,8 @@ const blockUser = async (req, res) => {
 
 const unblockUser = async (req, res) => {
   try {
-    const { userId, blockedUserId } = req.body;
+    const { blockedUserId } = req.body;
+    const userId = req.user._id.toString();
 
     const user = await User.findById(userId);
     const unblockedUser = await User.findById(blockedUserId);
@@ -895,13 +871,41 @@ const getUsers = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    const { id, name, picture } = req.body;
+    const { id, name, picture, bio, phone, dob, location, username, privacySettings, onlineStatus } = req.body;
+
+    if (username) {
+      const existingUser = await User.findOne({ username, _id: { $ne: id } });
+      if (existingUser) {
+        return res.status(400).json({ success: false, message: "Username is already taken" });
+      }
+    }
+
+    const updateFields = {};
+    if (name !== undefined) updateFields.name = name;
+    if (picture !== undefined) updateFields.picture = picture;
+    if (bio !== undefined) updateFields.bio = bio;
+    if (phone !== undefined) updateFields.phone = phone;
+    if (dob !== undefined) updateFields.dob = dob;
+    if (location !== undefined) updateFields.location = location;
+    if (username !== undefined) updateFields.username = username;
+    if (privacySettings !== undefined) updateFields.privacySettings = privacySettings;
+    if (onlineStatus !== undefined) updateFields.onlineStatus = onlineStatus;
 
     const user = await User.findByIdAndUpdate(
       id,
-      { name, picture },
+      updateFields,
       { new: true }
     );
+
+    if (global.io) {
+      global.io.emit("userProfileUpdated", {
+        userId: id,
+        name: user.name,
+        picture: user.picture,
+        onlineStatus: user.onlineStatus,
+        bio: user.bio,
+      });
+    }
 
     res.json(user);
   } catch (error) {

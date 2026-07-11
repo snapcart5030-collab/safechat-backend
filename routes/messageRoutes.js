@@ -1,6 +1,8 @@
 // routes/messageRoutes.js
 const express = require("express");
 const router = express.Router();
+const { protect } = require("../middlewares/authMiddleware");
+const attachmentUpload = require("../config/attachmentUpload");
 
 const {
   sendMessage,
@@ -12,7 +14,16 @@ const {
   getUnreadCount,
   deleteMessage,
   deliverOfflineMessages,
+  uploadAttachment,
+  reactToMessage,
+  editMessage,
+  starMessage,
+  pinMessage,
+  getSharedMedia,
 } = require("../controllers/messageController");
+
+// Secure all routes
+router.use(protect);
 
 // Send a message
 router.post("/send", sendMessage);
@@ -40,5 +51,25 @@ router.delete("/:messageId", deleteMessage);
 
 // Deliver offline messages
 router.post("/deliver-offline", deliverOfflineMessages);
+
+// Upload rich file attachments
+router.post("/upload", attachmentUpload.single("file"), uploadAttachment);
+
+// Toggle emoji reaction
+router.post("/:messageId/react", reactToMessage);
+
+// Edit message text
+router.put("/:messageId/edit", editMessage);
+
+// Star/unstar message
+// Note: PUT /:messageId/star
+router.put("/:messageId/star", starMessage);
+
+// Pin/unpin message
+// Note: PUT /:messageId/pin
+router.put("/:messageId/pin", pinMessage);
+
+// Get shared media/files
+router.get("/shared-media/:userId/:chatWithId", getSharedMedia);
 
 module.exports = router;

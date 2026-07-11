@@ -47,6 +47,7 @@ const notificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    dedupeKey: { type: String, default: null },
   },
   {
     timestamps: true,
@@ -56,5 +57,6 @@ const notificationSchema = new mongoose.Schema(
 // Index for faster queries
 notificationSchema.index({ receiver: 1, createdAt: -1 });
 notificationSchema.index({ receiver: 1, isRead: 1 });
+notificationSchema.index({ receiver: 1, dedupeKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Notification", notificationSchema);

@@ -40,4 +40,7 @@ const liveLocationSchema = new mongoose.Schema(
   }
 );
 
+liveLocationSchema.index({ senderId: 1, receiverId: 1, status: 1 });
+liveLocationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $type: "date" } } });
+
 module.exports = mongoose.model("LiveLocation", liveLocationSchema);

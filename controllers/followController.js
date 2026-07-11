@@ -131,16 +131,26 @@ const sendFollowRequest = async (req, res) => {
       });
     }
 
-    // NORMAL FOLLOW REQUEST (receiver is not following sender)
-    receiver.followRequests.push(senderId);
-    await receiver.save();
+    // NORMAL FOLLOW REQUEST.  The conditional update is the race-safe source
+    // of truth; two tabs cannot insert the same request or notification.
+    const requestUpdate = await User.updateOne(
+      { _id: receiverId, followRequests: { $ne: senderId } },
+      { $addToSet: { followRequests: senderId } }
+    );
+    if (!requestUpdate.modifiedCount) {
+      return res.status(409).json({ success: false, message: "Request already sent" });
+    }
 
-    await Notification.create({
+    const notification = await Notification.findOneAndUpdate({
+      receiver: receiverId,
+      dedupeKey: `follow-request:${senderId}`,
+    }, {
       sender: senderId,
       receiver: receiverId,
       type: "follow_request",
       message: `${sender.name} sent you a follow request`,
-    });
+      dedupeKey: `follow-request:${senderId}`,
+    }, { upsert: true, new: true, setDefaultsOnInsert: true });
 
     if (receiver.fcmToken) {
       await sendNotification(
@@ -152,6 +162,7 @@ const sendFollowRequest = async (req, res) => {
 
     if (global.io) {
       global.io.to(receiverId).emit("newNotification", {
+        _id: notification._id,
         senderName: sender.name,
         senderId: senderId,
         type: "follow_request",
@@ -241,17 +252,16 @@ const acceptFollowRequest = async (req, res) => {
       });
     }
 
-    // Remove from followRequests
-    currentUser.followRequests = currentUser.followRequests.filter(
-      (id) => id.toString() !== requesterId
+    // Only a pending request can transition to accepted. `$addToSet` keeps
+    // acceptance retry-safe across refreshes and multiple tabs.
+    const accepted = await User.updateOne(
+      { _id: currentUserId, followRequests: requesterId },
+      { $pull: { followRequests: requesterId }, $addToSet: { followers: requesterId } }
     );
-
-    // Add to followers and following
-    currentUser.followers.push(requesterId);
-    requester.following.push(currentUserId);
-
-    await currentUser.save();
-    await requester.save();
+    if (!accepted.modifiedCount) {
+      return res.status(409).json({ success: false, message: "This request is no longer pending" });
+    }
+    await User.updateOne({ _id: requesterId }, { $addToSet: { following: currentUserId } });
 
     // Create notification for requester
     await Notification.create({
