@@ -1,3 +1,4 @@
+// server.js
 require("dotenv").config();
 
 const express = require("express");
@@ -117,9 +118,9 @@ io.on("connection", (socket) => {
   // User blocks someone
   socket.on("blockUser", (data) => {
     const { blockerId, blockedId, blockerName, blockedName } = data;
-    
+
     console.log(`🔒 ${blockerName} blocked ${blockedName}`);
-    
+
     io.to(blockedId).emit("userBlocked", {
       by: blockerId,
       byName: blockerName,
@@ -127,13 +128,13 @@ io.on("connection", (socket) => {
       blocked: true,
       timestamp: new Date(),
     });
-    
+
     io.to(blockerId).emit("userBlockedSuccess", {
       blockedUser: blockedId,
       blockedName: blockedName,
       timestamp: new Date(),
     });
-    
+
     io.to(blockedId).emit("chatListUpdated", {
       userId: blockedId,
       chatWith: blockerId,
@@ -142,7 +143,7 @@ io.on("connection", (socket) => {
       lastMessage: `${blockerName} has blocked you`,
       lastMessageTime: new Date(),
     });
-    
+
     io.to(blockerId).emit("chatListUpdated", {
       userId: blockerId,
       chatWith: blockedId,
@@ -153,61 +154,119 @@ io.on("connection", (socket) => {
     });
   });
 
-  // User unblocks someone
-  socket.on("unblockUser", (data) => {
+  // User unblocks someone - RESTORES connection and chat
+  socket.on("unblockUser", async (data) => {
     const { unblockerId, unblockedId, unblockerName, unblockedName } = data;
-    
+
     console.log(`🔓 ${unblockerName} unblocked ${unblockedName}`);
-    
-    io.to(unblockedId).emit("userUnblocked", {
-      by: unblockerId,
-      byName: unblockerName,
-      message: `${unblockerName} has unblocked you. You can chat again!`,
-      unblocked: true,
-      timestamp: new Date(),
-    });
-    
-    io.to(unblockerId).emit("userUnblockedSuccess", {
-      unblockedUser: unblockedId,
-      unblockedName: unblockedName,
-      timestamp: new Date(),
-    });
-    
-    io.to(unblockedId).emit("chatListUpdated", {
-      userId: unblockedId,
-      chatWith: unblockerId,
-      blocked: false,
-      unblocked: true,
-      lastMessage: `${unblockerName} has unblocked you. You can chat now!`,
-      lastMessageTime: new Date(),
-    });
-    
-    io.to(unblockerId).emit("chatListUpdated", {
-      userId: unblockerId,
-      chatWith: unblockedId,
-      blocked: false,
-      unblocked: true,
-      lastMessage: `You unblocked ${unblockedName}. You can chat now!`,
-      lastMessageTime: new Date(),
-    });
-    
-    io.to(unblockerId).emit("chatRestored", {
-      with: unblockedId,
-      name: unblockedName,
-    });
-    
-    io.to(unblockedId).emit("chatRestored", {
-      with: unblockerId,
-      name: unblockerName,
-    });
+
+    try {
+      const User = require("../models/User");
+      const unblocker = await User.findById(unblockerId);
+      const unblocked = await User.findById(unblockedId);
+
+      const wasConnected = unblocker.previousConnections && 
+        unblocker.previousConnections.some(id => id.toString() === unblockedId);
+
+      // Emit to unblocked user
+      io.to(unblockedId).emit("userUnblocked", {
+        by: unblockerId,
+        byName: unblockerName,
+        message: wasConnected 
+          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+          : `${unblockerName} has unblocked you. You can chat again!`,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        timestamp: new Date(),
+      });
+
+      // Emit to unblocker
+      io.to(unblockerId).emit("userUnblockedSuccess", {
+        unblockedUser: unblockedId,
+        unblockedName: unblockedName,
+        connectionRestored: wasConnected,
+        timestamp: new Date(),
+      });
+
+      // Emit chat list updates
+      io.to(unblockedId).emit("chatListUpdated", {
+        userId: unblockedId,
+        chatWith: unblockerId,
+        blocked: false,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        lastMessage: wasConnected 
+          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+          : `${unblockerName} has unblocked you. You can chat now!`,
+        lastMessageTime: new Date(),
+      });
+
+      io.to(unblockerId).emit("chatListUpdated", {
+        userId: unblockerId,
+        chatWith: unblockedId,
+        blocked: false,
+        unblocked: true,
+        connectionRestored: wasConnected,
+        lastMessage: wasConnected 
+          ? `You unblocked ${unblockedName}. Your connection has been restored!` 
+          : `You unblocked ${unblockedName}. You can chat now!`,
+        lastMessageTime: new Date(),
+      });
+
+      // Emit chat restored events
+      io.to(unblockerId).emit("chatRestored", {
+        with: unblockedId,
+        name: unblockedName,
+        connectionRestored: wasConnected,
+      });
+
+      io.to(unblockedId).emit("chatRestored", {
+        with: unblockerId,
+        name: unblockerName,
+        connectionRestored: wasConnected,
+      });
+
+      // If connection was restored, emit follow restored event
+      if (wasConnected) {
+        io.to(unblockerId).emit("followRestored", {
+          with: unblockedId,
+          name: unblockedName,
+          message: `Your connection with ${unblockedName} has been restored!`,
+        });
+        
+        io.to(unblockedId).emit("followRestored", {
+          with: unblockerId,
+          name: unblockerName,
+          message: `Your connection with ${unblockerName} has been restored!`,
+        });
+      }
+
+    } catch (error) {
+      console.error("Error in unblock socket event:", error);
+      
+      // Fallback: still emit basic unblock events
+      io.to(unblockedId).emit("userUnblocked", {
+        by: unblockerId,
+        byName: unblockerName,
+        message: `${unblockerName} has unblocked you. You can chat again!`,
+        unblocked: true,
+        timestamp: new Date(),
+      });
+
+      io.to(unblockerId).emit("userUnblockedSuccess", {
+        unblockedUser: unblockedId,
+        unblockedName: unblockedName,
+        timestamp: new Date(),
+      });
+    }
   });
 
   // Blocked user sends one-time message
   socket.on("blockedUserMessage", (data) => {
     const { senderId, receiverId, message, senderName } = data;
-    
+
     console.log(`📨 Blocked user ${senderName} sent one-time message to ${receiverId}`);
-    
+
     io.to(receiverId).emit("blockedUserMessaged", {
       from: senderId,
       fromName: senderName,
@@ -215,7 +274,7 @@ io.on("connection", (socket) => {
       timestamp: new Date(),
       oneTime: true,
     });
-    
+
     io.to(senderId).emit("messageWaitingForUnblock", {
       to: receiverId,
       message: message,
@@ -227,14 +286,14 @@ io.on("connection", (socket) => {
   // Check block status
   socket.on("checkBlockStatus", async (data) => {
     const { userId, targetUserId } = data;
-    
+
     try {
       const user = await User.findById(userId);
       const targetUser = await User.findById(targetUserId);
-      
+
       const isBlocked = user.blockedUsers.some(id => id.toString() === targetUserId);
       const isBlockedBy = targetUser.blockedUsers.some(id => id.toString() === userId);
-      
+
       let oneTimeMessage = null;
       let oneTimeSent = false;
       if (isBlockedBy) {
@@ -246,7 +305,7 @@ io.on("connection", (socket) => {
           oneTimeSent = true;
         }
       }
-      
+
       io.to(userId).emit("blockStatusResponse", {
         userId: userId,
         targetUserId: targetUserId,
@@ -265,7 +324,7 @@ io.on("connection", (socket) => {
     const userId = authenticatedUserId;
     socket.join(userId);
     socket.userId = userId;
-    
+
     // Store socket to user mapping
     userSocketMap.set(socket.id, userId);
 
@@ -465,11 +524,6 @@ io.on("connection", (socket) => {
 
     if (!call || call.callerId !== authenticatedUserId) return;
 
-    if (!call) {
-      console.error(`❌ Call not found for offer ${callId}`);
-      return;
-    }
-
     const targetId = resolvePeerSocketId({
       socketId: socket.id,
       call,
@@ -505,11 +559,6 @@ io.on("connection", (socket) => {
 
     if (!call || call.receiverId !== authenticatedUserId) return;
 
-    if (!call) {
-      console.log("❌ Call not found:", callId);
-      return;
-    }
-
     const targetId = resolvePeerSocketId({
       socketId: socket.id,
       call,
@@ -544,11 +593,6 @@ io.on("connection", (socket) => {
     const call = activeVoiceCalls.get(callId);
 
     if (!call || ![call.callerId, call.receiverId].includes(authenticatedUserId)) return;
-
-    if (!call) {
-      console.log("❌ Call not found:", callId);
-      return;
-    }
 
     const targetId = resolvePeerSocketId({
       socketId: socket.id,
@@ -607,223 +651,223 @@ io.on("connection", (socket) => {
     }
   });
 
-    // Handle call busy
-    socket.on("voice-call-busy", (data) => {
-      const { callId, callerId, receiverId } = data;
-      console.log(`🔴 Voice call busy: ${callId}`);
+  // Handle call busy
+  socket.on("voice-call-busy", (data) => {
+    const { callId, callerId, receiverId } = data;
+    console.log(`🔴 Voice call busy: ${callId}`);
 
-      // Notify caller that receiver is busy
-      io.to(callerId).emit("voice-call-busy", {
-        callId,
-        callerId,
-        receiverId,
-        message: "User is busy"
-      });
-
-      // Clean up
-      activeVoiceCalls.delete(callId);
+    // Notify caller that receiver is busy
+    io.to(callerId).emit("voice-call-busy", {
+      callId,
+      callerId,
+      receiverId,
+      message: "User is busy"
     });
 
-    // ========== VIDEO CALL SIGNALING ==========
-    console.log("📹 Setting up video call listeners for socket:", socket.id);
+    // Clean up
+    activeVoiceCalls.delete(callId);
+  });
 
-    socket.on("video-call-request", (data) => {
-      const { callId, callerId, receiverId, callerName, receiverName } = data;
-      console.log(`📹 Video call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
+  // ========== VIDEO CALL SIGNALING ==========
+  console.log("📹 Setting up video call listeners for socket:", socket.id);
 
-      const receiverSockets = onlineUsers.get(receiverId);
-      if (!receiverSockets || receiverSockets.size === 0) {
-        console.log(`❌ User ${receiverId} is offline`);
-        socket.emit("video-call-user-offline", {
-          receiverId,
-          message: "User is offline",
-        });
-        return;
-      }
+  socket.on("video-call-request", (data) => {
+    const { callId, callerId, receiverId, callerName, receiverName } = data;
+    console.log(`📹 Video call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
 
-      const receiverSocketId = [...receiverSockets][0];
-      const call = {
-        callerId,
+    const receiverSockets = onlineUsers.get(receiverId);
+    if (!receiverSockets || receiverSockets.size === 0) {
+      console.log(`❌ User ${receiverId} is offline`);
+      socket.emit("video-call-user-offline", {
         receiverId,
-        callerName,
-        receiverName,
-        callerSocketId: socket.id,
-        receiverSocketId,
-        status: "calling",
-        startTime: new Date(),
-      };
+        message: "User is offline",
+      });
+      return;
+    }
 
+    const receiverSocketId = [...receiverSockets][0];
+    const call = {
+      callerId,
+      receiverId,
+      callerName,
+      receiverName,
+      callerSocketId: socket.id,
+      receiverSocketId,
+      status: "calling",
+      startTime: new Date(),
+    };
+
+    activeVideoCalls.set(callId, call);
+
+    io.to(receiverSocketId).emit("incoming-video-call", {
+      callId,
+      callerId,
+      receiverId,
+      callerName,
+      receiverName,
+      callerSocketId: socket.id,
+      receiverSocketId,
+    });
+  });
+
+  socket.on("accept-video-call", (data) => {
+    const { callId, callerId, receiverId, callerSocketId } = data;
+    console.log(`✅ Video call accepted: ${callId} by ${receiverId}`);
+
+    const call = activeVideoCalls.get(callId);
+    if (call) {
+      call.status = "connected";
+      call.receiverSocketId = socket.id;
       activeVideoCalls.set(callId, call);
+    }
 
-      io.to(receiverSocketId).emit("incoming-video-call", {
+    const targetSocketId = callerSocketId || (call?.callerSocketId ?? null);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("video-call-accepted", {
         callId,
         callerId,
         receiverId,
-        callerName,
-        receiverName,
-        callerSocketId: socket.id,
-        receiverSocketId,
+        receiverSocketId: socket.id,
       });
-    });
+    }
+  });
 
-    socket.on("accept-video-call", (data) => {
-      const { callId, callerId, receiverId, callerSocketId } = data;
-      console.log(`✅ Video call accepted: ${callId} by ${receiverId}`);
+  socket.on("reject-video-call", (data) => {
+    const { callId, callerId, receiverId, callerSocketId } = data;
+    console.log(`❌ Video call rejected: ${callId} by ${receiverId}`);
 
-      const call = activeVideoCalls.get(callId);
-      if (call) {
-        call.status = "connected";
-        call.receiverSocketId = socket.id;
-        activeVideoCalls.set(callId, call);
-      }
+    activeVideoCalls.delete(callId);
 
-      const targetSocketId = callerSocketId || (call?.callerSocketId ?? null);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit("video-call-accepted", {
-          callId,
-          callerId,
-          receiverId,
-          receiverSocketId: socket.id,
-        });
-      }
-    });
-
-    socket.on("reject-video-call", (data) => {
-      const { callId, callerId, receiverId, callerSocketId } = data;
-      console.log(`❌ Video call rejected: ${callId} by ${receiverId}`);
-
-      activeVideoCalls.delete(callId);
-
-      const targetSocketId = callerSocketId || null;
-      if (targetSocketId) {
-        io.to(targetSocketId).emit("video-call-rejected", {
-          callId,
-          callerId,
-          receiverId,
-          message: "Call rejected",
-        });
-      }
-    });
-
-    socket.on("video-call-offer", (data) => {
-      const { offer, targetSocketId, callId, callerId, receiverId } = data;
-      console.log(`📡 Sending WebRTC video offer for call: ${callId} to targetSocket: ${targetSocketId}`);
-      const call = activeVideoCalls.get(callId);
-
-      if (!call) {
-        console.error(`❌ Video call not found for offer ${callId}`);
-        return;
-      }
-
-      const targetId = resolvePeerSocketId({
-        socketId: socket.id,
-        call,
-        fallbackSocketId: targetSocketId,
+    const targetSocketId = callerSocketId || null;
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("video-call-rejected", {
+        callId,
+        callerId,
+        receiverId,
+        message: "Call rejected",
       });
+    }
+  });
 
-      if (targetId) {
-        io.to(targetId).emit("video-call-offer", {
-          offer,
-          callId,
-          callerId,
-          receiverId,
-          fromSocketId: socket.id,
-        });
-      }
+  socket.on("video-call-offer", (data) => {
+    const { offer, targetSocketId, callId, callerId, receiverId } = data;
+    console.log(`📡 Sending WebRTC video offer for call: ${callId} to targetSocket: ${targetSocketId}`);
+    const call = activeVideoCalls.get(callId);
+
+    if (!call) {
+      console.error(`❌ Video call not found for offer ${callId}`);
+      return;
+    }
+
+    const targetId = resolvePeerSocketId({
+      socketId: socket.id,
+      call,
+      fallbackSocketId: targetSocketId,
     });
 
-    socket.on("video-call-answer", (data) => {
-      const { answer, targetSocketId, callId, callerId, receiverId } = data;
-      console.log(`📡 Sending WebRTC video answer for call: ${callId} to targetSocket: ${targetSocketId}`);
-      const call = activeVideoCalls.get(callId);
-
-      if (!call) return;
-
-      const targetId = resolvePeerSocketId({
-        socketId: socket.id,
-        call,
-        fallbackSocketId: targetSocketId,
+    if (targetId) {
+      io.to(targetId).emit("video-call-offer", {
+        offer,
+        callId,
+        callerId,
+        receiverId,
+        fromSocketId: socket.id,
       });
+    }
+  });
 
-      if (targetId) {
-        io.to(targetId).emit("video-call-answer", {
-          answer,
-          callId,
-          callerId,
-          receiverId,
-          fromSocketId: socket.id,
-        });
-      }
+  socket.on("video-call-answer", (data) => {
+    const { answer, targetSocketId, callId, callerId, receiverId } = data;
+    console.log(`📡 Sending WebRTC video answer for call: ${callId} to targetSocket: ${targetSocketId}`);
+    const call = activeVideoCalls.get(callId);
+
+    if (!call) return;
+
+    const targetId = resolvePeerSocketId({
+      socketId: socket.id,
+      call,
+      fallbackSocketId: targetSocketId,
     });
 
-    socket.on("video-ice-candidate", (data) => {
-      const { candidate, targetSocketId, callId, callerId, receiverId } = data;
-      const call = activeVideoCalls.get(callId);
-
-      if (!call) return;
-
-      const targetId = resolvePeerSocketId({
-        socketId: socket.id,
-        call,
-        fallbackSocketId: targetSocketId,
+    if (targetId) {
+      io.to(targetId).emit("video-call-answer", {
+        answer,
+        callId,
+        callerId,
+        receiverId,
+        fromSocketId: socket.id,
       });
+    }
+  });
 
-      if (targetId) {
-        io.to(targetId).emit("video-ice-candidate", {
-          candidate,
-          callId,
-          callerId,
-          receiverId,
-          fromSocketId: socket.id,
-        });
-      }
+  socket.on("video-ice-candidate", (data) => {
+    const { candidate, targetSocketId, callId, callerId, receiverId } = data;
+    const call = activeVideoCalls.get(callId);
+
+    if (!call) return;
+
+    const targetId = resolvePeerSocketId({
+      socketId: socket.id,
+      call,
+      fallbackSocketId: targetSocketId,
     });
 
-    socket.on("video-call-ended", (data) => {
-      const { callId, callerId, receiverId } = data;
-      console.log(`📹 Video call ended: ${callId}`);
+    if (targetId) {
+      io.to(targetId).emit("video-ice-candidate", {
+        candidate,
+        callId,
+        callerId,
+        receiverId,
+        fromSocketId: socket.id,
+      });
+    }
+  });
 
-      const call = activeVideoCalls.get(callId);
-      if (call) {
-        const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
-        peers.forEach((peerSocketId) => {
-          if (peerSocketId !== socket.id) {
-            io.to(peerSocketId).emit("video-call-ended-by-other", {
-              callId,
-              endedBy: socket.userId || "unknown",
-            });
-          }
-        });
-        activeVideoCalls.delete(callId);
-      } else {
-        if (callerId) {
-          io.to(callerId).emit("video-call-ended-by-other", {
+  socket.on("video-call-ended", (data) => {
+    const { callId, callerId, receiverId } = data;
+    console.log(`📹 Video call ended: ${callId}`);
+
+    const call = activeVideoCalls.get(callId);
+    if (call) {
+      const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
+      peers.forEach((peerSocketId) => {
+        if (peerSocketId !== socket.id) {
+          io.to(peerSocketId).emit("video-call-ended-by-other", {
             callId,
             endedBy: socket.userId || "unknown",
           });
         }
-        if (receiverId) {
-          io.to(receiverId).emit("video-call-ended-by-other", {
-            callId,
-            endedBy: socket.userId || "unknown",
-          });
-        }
-      }
-    });
-
-    socket.on("video-call-busy", (data) => {
-      const { callId, callerId, receiverId } = data;
-      console.log(`🔴 Video call busy: ${callId}`);
-
-      io.to(callerId).emit("video-call-busy", {
-        callId,
-        callerId,
-        receiverId,
-        message: "User is busy"
       });
-
       activeVideoCalls.delete(callId);
+    } else {
+      if (callerId) {
+        io.to(callerId).emit("video-call-ended-by-other", {
+          callId,
+          endedBy: socket.userId || "unknown",
+        });
+      }
+      if (receiverId) {
+        io.to(receiverId).emit("video-call-ended-by-other", {
+          callId,
+          endedBy: socket.userId || "unknown",
+        });
+      }
+    }
+  });
+
+  socket.on("video-call-busy", (data) => {
+    const { callId, callerId, receiverId } = data;
+    console.log(`🔴 Video call busy: ${callId}`);
+
+    io.to(callerId).emit("video-call-busy", {
+      callId,
+      callerId,
+      receiverId,
+      message: "User is busy"
     });
+
+    activeVideoCalls.delete(callId);
+  });
 
   // ================= LOCATION SHARING =================
   socket.on("join-location-room", ({ requestId }) => {
@@ -941,7 +985,7 @@ io.on("connection", (socket) => {
       Array.from(onlineUsers.keys())
     );
   });
-  
+
 });
 
 // =============================================

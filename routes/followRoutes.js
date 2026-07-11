@@ -57,3 +57,6 @@ router.get("/status/:currentUserId/:targetUserId", requireParamOwner("currentUse
 router.get("/mutual/:userId", requireParamOwner("userId"), getMutualFriends);
 
 module.exports = router;
+router.get("/mutual/:userId", getMutualFriends);
+  
+module.exports = router;
