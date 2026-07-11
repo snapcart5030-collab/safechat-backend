@@ -454,6 +454,30 @@ io.on("connection", (socket) => {
 
     activeVoiceCalls.set(callId, call);
 
+    setTimeout(() => {
+
+    const currentCall = activeVoiceCalls.get(callId);
+
+    if (!currentCall) return;
+
+    if (currentCall.status === "calling") {
+
+        io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
+            callId,
+            message: "No Answer"
+        });
+
+        io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
+            callId
+        });
+
+        activeVoiceCalls.delete(callId);
+
+        console.log("⏰ Call timeout");
+    }
+
+}, 30000);
+
     io.to(receiverSocketId).emit("incoming-voice-call", {
       callId,
       callerId,
