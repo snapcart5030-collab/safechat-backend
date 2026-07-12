@@ -81,7 +81,7 @@ const sendMessage = async (req, res) => {
       fileType: fileType || null,
       fileSize: fileSize || null,
       replyTo: replyTo || null,
-      clientMessageId: clientMessageId || null,
+      ...(clientMessageId && { clientMessageId }),
       seen: false,
       isRead: false,
       delivered: isOnline,
