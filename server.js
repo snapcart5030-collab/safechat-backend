@@ -103,6 +103,15 @@ const activeVideoCalls = new Map(); // Store active video calls
 const activeLocationSharing = new Map();
 const { resolvePeerSocketId } = require("./utils/socketRouting");
 
+// Helper function to get socket ID from user ID
+const getSocketIdFromUserId = (userId) => {
+  const userSockets = onlineUsers.get(userId);
+  if (userSockets && userSockets.size > 0) {
+    return [...userSockets][0];
+  }
+  return null;
+};
+
 // ================= SOCKET.IO =================
 io.on("connection", (socket) => {
   console.log("User Connected:", socket.id);
@@ -455,28 +464,20 @@ io.on("connection", (socket) => {
     activeVoiceCalls.set(callId, call);
 
     setTimeout(() => {
-
-    const currentCall = activeVoiceCalls.get(callId);
-
-    if (!currentCall) return;
-
-    if (currentCall.status === "calling") {
-
+      const currentCall = activeVoiceCalls.get(callId);
+      if (!currentCall) return;
+      if (currentCall.status === "calling") {
         io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
-            callId,
-            message: "No Answer"
+          callId,
+          message: "No Answer"
         });
-
         io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
-            callId
+          callId
         });
-
         activeVoiceCalls.delete(callId);
-
         console.log("⏰ Call timeout");
-    }
-
-}, 30000);
+      }
+    }, 30000);
 
     io.to(receiverSocketId).emit("incoming-voice-call", {
       callId,
@@ -695,11 +696,16 @@ io.on("connection", (socket) => {
   // ========== VIDEO CALL SIGNALING ==========
   console.log("📹 Setting up video call listeners for socket:", socket.id);
 
+  // Handle video call request - User A calls User B
   socket.on("video-call-request", (data) => {
     const { callId, callerId, receiverId, callerName, receiverName } = data;
+
+    if (!callId || callerId !== authenticatedUserId || !receiverId || callerId === receiverId) return;
+
     console.log(`📹 Video call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
 
     const receiverSockets = onlineUsers.get(receiverId);
+
     if (!receiverSockets || receiverSockets.size === 0) {
       console.log(`❌ User ${receiverId} is offline`);
       socket.emit("video-call-user-offline", {
@@ -723,6 +729,23 @@ io.on("connection", (socket) => {
 
     activeVideoCalls.set(callId, call);
 
+    // Set timeout for unanswered call
+    setTimeout(() => {
+      const currentCall = activeVideoCalls.get(callId);
+      if (!currentCall) return;
+      if (currentCall.status === "calling") {
+        io.to(currentCall.callerSocketId).emit("video-call-rejected", {
+          callId,
+          message: "No Answer"
+        });
+        io.to(currentCall.receiverSocketId).emit("video-call-ended-by-other", {
+          callId
+        });
+        activeVideoCalls.delete(callId);
+        console.log("⏰ Video call timeout");
+      }
+    }, 30000);
+
     io.to(receiverSocketId).emit("incoming-video-call", {
       callId,
       callerId,
@@ -732,13 +755,18 @@ io.on("connection", (socket) => {
       callerSocketId: socket.id,
       receiverSocketId,
     });
+
+    console.log(`✅ Incoming video call sent to ${receiverName} (${receiverSocketId})`);
   });
 
+  // Handle accept video call - User B accepts call from User A
   socket.on("accept-video-call", (data) => {
     const { callId, callerId, receiverId, callerSocketId } = data;
+
     console.log(`✅ Video call accepted: ${callId} by ${receiverId}`);
 
     const call = activeVideoCalls.get(callId);
+    if (!call || call.receiverId !== authenticatedUserId) return;
     if (call) {
       call.status = "connected";
       call.receiverSocketId = socket.id;
@@ -754,10 +782,14 @@ io.on("connection", (socket) => {
         receiverSocketId: socket.id,
       });
     }
+
+    console.log(`✅ Video call accepted notification sent to caller (${targetSocketId})`);
   });
 
+  // Handle reject video call - User B rejects call from User A
   socket.on("reject-video-call", (data) => {
     const { callId, callerId, receiverId, callerSocketId } = data;
+
     console.log(`❌ Video call rejected: ${callId} by ${receiverId}`);
 
     activeVideoCalls.delete(callId);
@@ -771,15 +803,19 @@ io.on("connection", (socket) => {
         message: "Call rejected",
       });
     }
+
+    console.log(`❌ Video call rejection sent to caller (${targetSocketId})`);
   });
 
+  // Handle WebRTC offer - Caller sends offer to Receiver
   socket.on("video-call-offer", (data) => {
     const { offer, targetSocketId, callId, callerId, receiverId } = data;
+
     console.log(`📡 Sending WebRTC video offer for call: ${callId} to targetSocket: ${targetSocketId}`);
     const call = activeVideoCalls.get(callId);
 
-    if (!call) {
-      console.error(`❌ Video call not found for offer ${callId}`);
+    if (!call || call.callerId !== authenticatedUserId) {
+      console.error(`❌ Call not found or not authorized for offer ${callId}`);
       return;
     }
 
@@ -789,23 +825,37 @@ io.on("connection", (socket) => {
       fallbackSocketId: targetSocketId,
     });
 
-    if (targetId) {
-      io.to(targetId).emit("video-call-offer", {
-        offer,
+    if (!targetId) {
+      console.error(`❌ No target socket found for video call ${callId}`);
+      socket.emit("video-call-error", {
         callId,
-        callerId,
-        receiverId,
-        fromSocketId: socket.id,
+        message: "Target socket not found",
       });
+      return;
     }
+
+    io.to(targetId).emit("video-call-offer", {
+      offer,
+      callId,
+      callerId,
+      receiverId,
+      fromSocketId: socket.id,
+    });
+
+    console.log(`✅ Video offer sent to socket: ${targetId}`);
   });
 
+  // Handle WebRTC answer - Receiver sends answer to Caller
   socket.on("video-call-answer", (data) => {
     const { answer, targetSocketId, callId, callerId, receiverId } = data;
+
     console.log(`📡 Sending WebRTC video answer for call: ${callId} to targetSocket: ${targetSocketId}`);
     const call = activeVideoCalls.get(callId);
 
-    if (!call) return;
+    if (!call || call.receiverId !== authenticatedUserId) {
+      console.error(`❌ Call not found or not authorized for answer ${callId}`);
+      return;
+    }
 
     const targetId = resolvePeerSocketId({
       socketId: socket.id,
@@ -813,22 +863,37 @@ io.on("connection", (socket) => {
       fallbackSocketId: targetSocketId,
     });
 
-    if (targetId) {
-      io.to(targetId).emit("video-call-answer", {
-        answer,
+    if (!targetId) {
+      console.error(`❌ No target socket found for video call ${callId}`);
+      socket.emit("video-call-error", {
         callId,
-        callerId,
-        receiverId,
-        fromSocketId: socket.id,
+        message: "Target socket not found",
       });
+      return;
     }
+
+    io.to(targetId).emit("video-call-answer", {
+      answer,
+      callId,
+      callerId,
+      receiverId,
+      fromSocketId: socket.id,
+    });
+
+    console.log(`✅ Video answer sent to socket: ${targetId}`);
   });
 
+  // Handle ICE candidates for video
   socket.on("video-ice-candidate", (data) => {
     const { candidate, targetSocketId, callId, callerId, receiverId } = data;
+
+    console.log(`🧊 Sending video ICE candidate for call: ${callId} to targetSocket: ${targetSocketId}`);
     const call = activeVideoCalls.get(callId);
 
-    if (!call) return;
+    if (!call || ![call.callerId, call.receiverId].includes(authenticatedUserId)) {
+      console.error(`❌ Call not found or not authorized for ICE candidate ${callId}`);
+      return;
+    }
 
     const targetId = resolvePeerSocketId({
       socketId: socket.id,
@@ -836,19 +901,26 @@ io.on("connection", (socket) => {
       fallbackSocketId: targetSocketId,
     });
 
-    if (targetId) {
-      io.to(targetId).emit("video-ice-candidate", {
-        candidate,
-        callId,
-        callerId,
-        receiverId,
-        fromSocketId: socket.id,
-      });
+    if (!targetId) {
+      console.error(`❌ No target socket found for video ICE candidate ${callId}`);
+      return;
     }
+
+    io.to(targetId).emit("video-ice-candidate", {
+      candidate,
+      callId,
+      callerId,
+      receiverId,
+      fromSocketId: socket.id,
+    });
+
+    console.log(`✅ Video ICE candidate sent to socket: ${targetId}`);
   });
 
+  // Handle video call end with proper cleanup
   socket.on("video-call-ended", (data) => {
     const { callId, callerId, receiverId } = data;
+
     console.log(`📹 Video call ended: ${callId}`);
 
     const call = activeVideoCalls.get(callId);
@@ -863,6 +935,7 @@ io.on("connection", (socket) => {
         }
       });
       activeVideoCalls.delete(callId);
+      console.log(`🧹 Video call ${callId} cleaned up`);
     } else {
       if (callerId) {
         io.to(callerId).emit("video-call-ended-by-other", {
@@ -879,10 +952,12 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Handle video call busy
   socket.on("video-call-busy", (data) => {
     const { callId, callerId, receiverId } = data;
     console.log(`🔴 Video call busy: ${callId}`);
 
+    // Notify caller that receiver is busy
     io.to(callerId).emit("video-call-busy", {
       callId,
       callerId,
@@ -890,6 +965,7 @@ io.on("connection", (socket) => {
       message: "User is busy"
     });
 
+    // Clean up
     activeVideoCalls.delete(callId);
   });
 
@@ -1115,4 +1191,5 @@ server.listen(PORT, () => {
   console.log(`📡 WebSocket Server Ready`);
   console.log(`👥 Online users tracking active`);
   console.log(`🎙️ Voice call system ready`);
+  console.log(`📹 Video call system ready`);
 });
