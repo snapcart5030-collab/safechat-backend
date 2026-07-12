@@ -43,7 +43,6 @@ const messageSchema = new mongoose.Schema(
     },
     clientMessageId: {
       type: String,
-      default: null,
     },
     // ATTACHMENT SHARING
     fileUrl: {
@@ -116,7 +115,15 @@ messageSchema.index({ senderId: 1, receiverId: 1 });
 messageSchema.index({ receiverId: 1, isRead: 1 });
 messageSchema.index({ autoDeleteAt: 1 });
 messageSchema.index({ status: 1 });
-messageSchema.index({ senderId: 1, clientMessageId: 1 }, { unique: true, sparse: true });
+messageSchema.index(
+  { senderId: 1, clientMessageId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientMessageId: { $exists: true, $type: "string" }
+    }
+  }
+);
 messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Message", messageSchema);
