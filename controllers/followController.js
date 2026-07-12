@@ -136,9 +136,6 @@ const sendFollowRequest = async (req, res) => {
     if (!requestUpdate.modifiedCount) {
       return res.status(409).json({ success: false, message: "Request already sent" });
     }
-    receiver.followRequests.push(senderId);
-    await receiver.save();
-
     const notification = await Notification.findOneAndUpdate({
       receiver: receiverId,
       dedupeKey: `follow-request:${senderId}`,
@@ -256,22 +253,16 @@ const acceptFollowRequest = async (req, res) => {
       return res.status(409).json({ success: false, message: "This request is no longer pending" });
     }
     await User.updateOne({ _id: requesterId }, { $addToSet: { following: currentUserId } });
-    currentUser.followRequests = currentUser.followRequests.filter(
-      (id) => id.toString() !== requesterId
-    );
-
-    currentUser.followers.push(requesterId);
-    requester.following.push(currentUserId);
-
-    await currentUser.save();
-    await requester.save();
-
-    await Notification.create({
+    await Notification.findOneAndUpdate({
+      receiver: requesterId,
+      dedupeKey: `follow-accepted:${currentUserId}:${requesterId}`,
+    }, {
       sender: currentUserId,
       receiver: requesterId,
       type: "request_accepted",
       message: `${currentUser.name} accepted your follow request`,
-    });
+      dedupeKey: `follow-accepted:${currentUserId}:${requesterId}`,
+    }, { upsert: true, new: true, setDefaultsOnInsert: true });
 
     await Notification.create({
       sender: requesterId,
