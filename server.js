@@ -23,7 +23,6 @@ const Message = require("./models/Message");
 const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
 const CallHistory = require("./models/CallHistory");
-
 const app = express();
 const server = http.createServer(app);
 
@@ -175,15 +174,15 @@ io.on("connection", (socket) => {
       const unblocker = await User.findById(unblockerId);
       const unblocked = await User.findById(unblockedId);
 
-      const wasConnected = unblocker.previousConnections &&
+      const wasConnected = unblocker.previousConnections && 
         unblocker.previousConnections.some(id => id.toString() === unblockedId);
 
       // Emit to unblocked user
       io.to(unblockedId).emit("userUnblocked", {
         by: unblockerId,
         byName: unblockerName,
-        message: wasConnected
-          ? `${unblockerName} has unblocked you. Your connection has been restored!`
+        message: wasConnected 
+          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
           : `${unblockerName} has unblocked you. You can chat again!`,
         unblocked: true,
         connectionRestored: wasConnected,
@@ -205,8 +204,8 @@ io.on("connection", (socket) => {
         blocked: false,
         unblocked: true,
         connectionRestored: wasConnected,
-        lastMessage: wasConnected
-          ? `${unblockerName} has unblocked you. Your connection has been restored!`
+        lastMessage: wasConnected 
+          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
           : `${unblockerName} has unblocked you. You can chat now!`,
         lastMessageTime: new Date(),
       });
@@ -217,8 +216,8 @@ io.on("connection", (socket) => {
         blocked: false,
         unblocked: true,
         connectionRestored: wasConnected,
-        lastMessage: wasConnected
-          ? `You unblocked ${unblockedName}. Your connection has been restored!`
+        lastMessage: wasConnected 
+          ? `You unblocked ${unblockedName}. Your connection has been restored!` 
           : `You unblocked ${unblockedName}. You can chat now!`,
         lastMessageTime: new Date(),
       });
@@ -243,7 +242,7 @@ io.on("connection", (socket) => {
           name: unblockedName,
           message: `Your connection with ${unblockedName} has been restored!`,
         });
-
+        
         io.to(unblockedId).emit("followRestored", {
           with: unblockerId,
           name: unblockerName,
@@ -253,7 +252,7 @@ io.on("connection", (socket) => {
 
     } catch (error) {
       console.error("Error in unblock socket event:", error);
-
+      
       // Fallback: still emit basic unblock events
       io.to(unblockedId).emit("userUnblocked", {
         by: unblockerId,
@@ -339,7 +338,7 @@ io.on("connection", (socket) => {
     userSocketMap.set(socket.id, userId);
 
     console.log(`✅ User Joined Room: ${userId}`);
-
+    
     // SYNCHRONIZATION: Mark all offline messages as delivered
     try {
       const Message = require("./models/Message");
@@ -432,28 +431,11 @@ io.on("connection", (socket) => {
   console.log("🎙️ Setting up voice call listeners for socket:", socket.id);
 
   // Handle voice call request - User A calls User B
-  socket.on("voice-call-request", async (data) => {
+  socket.on("voice-call-request", (data) => {
     const { callId, callerId, receiverId, callerName, receiverName } = data;
 
     if (!callId || callerId !== authenticatedUserId || !receiverId || callerId === receiverId) return;
-        
 
-  try {
-    await CallHistory.create({
-      callId,
-      callerId,
-      receiverId,
-      callType: "voice",
-      status: "calling",
-      startedAt: new Date(),
-    });
-
-    console.log("📞 Voice call history created");
-  } catch (err) {
-    console.log("Call History Error:", err.message);
-  }
-
-  
     console.log(`📞 Voice call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
 
     const receiverSockets = onlineUsers.get(receiverId);
@@ -481,21 +463,39 @@ io.on("connection", (socket) => {
 
     activeVoiceCalls.set(callId, call);
 
-    setTimeout(() => {
-      const currentCall = activeVoiceCalls.get(callId);
-      if (!currentCall) return;
-      if (currentCall.status === "calling") {
-        io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
-          callId,
-          message: "No Answer"
-        });
-        io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
-          callId
-        });
-        activeVoiceCalls.delete(callId);
-        console.log("⏰ Call timeout");
-      }
-    }, 30000);
+  // In voice-call-request timeout
+setTimeout(async () => {
+  const currentCall = activeVoiceCalls.get(callId);
+  if (!currentCall) return;
+  if (currentCall.status === "calling") {
+    // Save as missed call
+    try {
+      await CallHistory.create({
+        callId: callId,
+        callerId: currentCall.callerId,
+        receiverId: currentCall.receiverId,
+        callType: "voice",
+        status: "missed",
+        startedAt: currentCall.startTime,
+        endedAt: new Date(),
+        duration: 0
+      });
+      console.log(`✅ Missed call saved for ${callId}`);
+    } catch (err) {
+      console.error("Error saving missed call:", err);
+    }
+    
+    io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
+      callId,
+      message: "No Answer"
+    });
+    io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
+      callId
+    });
+    activeVoiceCalls.delete(callId);
+    console.log("⏰ Call timeout");
+  }
+}, 30000);
 
     io.to(receiverSocketId).emit("incoming-voice-call", {
       callId,
@@ -538,25 +538,41 @@ io.on("connection", (socket) => {
   });
 
   // Handle reject voice call - User B rejects call from User A
-  socket.on("reject-voice-call", (data) => {
-    const { callId, callerId, receiverId, callerSocketId } = data;
+socket.on("reject-voice-call", async (data) => {
+  const { callId, callerId, receiverId, callerSocketId } = data;
 
-    console.log(`❌ Voice call rejected: ${callId} by ${receiverId}`);
+  console.log(`❌ Voice call rejected: ${callId} by ${receiverId}`);
 
-    activeVoiceCalls.delete(callId);
-
-    const targetSocketId = callerSocketId || null;
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("voice-call-rejected", {
-        callId,
-        callerId,
-        receiverId,
-        message: "Call rejected",
+  const call = activeVoiceCalls.get(callId);
+  if (call) {
+    try {
+      await CallHistory.create({
+        callId: callId,
+        callerId: call.callerId,
+        receiverId: call.receiverId,
+        callType: "voice",
+        status: "rejected",
+        startedAt: call.startTime,
+        endedAt: new Date(),
+        duration: 0
       });
+      console.log(`✅ Rejected call saved for ${callId}`);
+    } catch (err) {
+      console.error("Error saving rejected call:", err);
     }
+  }
 
-    console.log(`❌ Call rejection sent to caller (${targetSocketId})`);
-  });
+  activeVoiceCalls.delete(callId);
+  const targetSocketId = callerSocketId || null;
+  if (targetSocketId) {
+    io.to(targetSocketId).emit("voice-call-rejected", {
+      callId,
+      callerId,
+      receiverId,
+      message: "Call rejected",
+    });
+  }
+});
 
   // Handle WebRTC offer - Caller sends offer to Receiver
   socket.on("voice-call-offer", (data) => {
@@ -660,39 +676,46 @@ io.on("connection", (socket) => {
   });
 
   // Handle call end with proper cleanup
-  socket.on("voice-call-ended", (data) => {
-    const { callId, callerId, receiverId } = data;
-
-    console.log(`📞 Voice call ended: ${callId}`);
-
-    const call = activeVoiceCalls.get(callId);
-    if (call) {
-      const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
-      peers.forEach((peerSocketId) => {
-        if (peerSocketId !== socket.id) {
-          io.to(peerSocketId).emit("voice-call-ended-by-other", {
-            callId,
-            endedBy: socket.userId || "unknown",
-          });
-        }
+socket.on("voice-call-ended", async (data) => {
+  const { callId, callerId, receiverId } = data;
+  
+  console.log(`📞 Voice call ended: ${callId}`);
+  
+  const call = activeVoiceCalls.get(callId);
+  if (call) {
+    // Calculate duration
+    const duration = Math.floor((new Date() - call.startTime) / 1000);
+    
+    // Save to database
+    try {
+      await CallHistory.create({
+        callId: callId,
+        callerId: call.callerId,
+        receiverId: call.receiverId,
+        callType: "voice",
+        status: call.status === "calling" ? "missed" : "ended",
+        startedAt: call.startTime,
+        endedAt: new Date(),
+        duration: duration
       });
-      activeVoiceCalls.delete(callId);
-      console.log(`🧹 Call ${callId} cleaned up`);
-    } else {
-      if (callerId) {
-        io.to(callerId).emit("voice-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
-        });
-      }
-      if (receiverId) {
-        io.to(receiverId).emit("voice-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
-        });
-      }
+      console.log(`✅ Call history saved for call ${callId}`);
+    } catch (err) {
+      console.error("Error saving call history:", err);
     }
-  });
+    
+    const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
+    peers.forEach((peerSocketId) => {
+      if (peerSocketId !== socket.id) {
+        io.to(peerSocketId).emit("voice-call-ended-by-other", {
+          callId,
+          endedBy: socket.userId || "unknown",
+        });
+      }
+    });
+    activeVoiceCalls.delete(callId);
+    console.log(`🧹 Call ${callId} cleaned up`);
+  }
+});
 
   // Handle call busy
   socket.on("voice-call-busy", (data) => {
@@ -936,39 +959,46 @@ io.on("connection", (socket) => {
   });
 
   // Handle video call end with proper cleanup
-  socket.on("video-call-ended", (data) => {
-    const { callId, callerId, receiverId } = data;
-
-    console.log(`📹 Video call ended: ${callId}`);
-
-    const call = activeVideoCalls.get(callId);
-    if (call) {
-      const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
-      peers.forEach((peerSocketId) => {
-        if (peerSocketId !== socket.id) {
-          io.to(peerSocketId).emit("video-call-ended-by-other", {
-            callId,
-            endedBy: socket.userId || "unknown",
-          });
-        }
+socket.on("video-call-ended", async (data) => {
+  const { callId, callerId, receiverId } = data;
+  
+  console.log(`📹 Video call ended: ${callId}`);
+  
+  const call = activeVideoCalls.get(callId);
+  if (call) {
+    // Calculate duration
+    const duration = Math.floor((new Date() - call.startTime) / 1000);
+    
+    // Save to database
+    try {
+      await CallHistory.create({
+        callId: callId,
+        callerId: call.callerId,
+        receiverId: call.receiverId,
+        callType: "video",
+        status: call.status === "calling" ? "missed" : "ended",
+        startedAt: call.startTime,
+        endedAt: new Date(),
+        duration: duration
       });
-      activeVideoCalls.delete(callId);
-      console.log(`🧹 Video call ${callId} cleaned up`);
-    } else {
-      if (callerId) {
-        io.to(callerId).emit("video-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
-        });
-      }
-      if (receiverId) {
-        io.to(receiverId).emit("video-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
-        });
-      }
+      console.log(`✅ Video call history saved for call ${callId}`);
+    } catch (err) {
+      console.error("Error saving video call history:", err);
     }
-  });
+    
+    const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
+    peers.forEach((peerSocketId) => {
+      if (peerSocketId !== socket.id) {
+        io.to(peerSocketId).emit("video-call-ended-by-other", {
+          callId,
+          endedBy: socket.userId || "unknown",
+        });
+      }
+    });
+    activeVideoCalls.delete(callId);
+    console.log(`🧹 Video call ${callId} cleaned up`);
+  }
+});
 
   // Handle video call busy
   socket.on("video-call-busy", (data) => {
@@ -1145,6 +1175,79 @@ app.get("/api/users/online/all", (req, res) => {
     count: onlineUsersList.length,
     timestamp: new Date().toISOString()
   });
+});
+
+
+
+
+// Get call history for a user
+app.get("/api/calls/history/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const calls = await CallHistory.find({
+      $or: [
+        { callerId: userId },
+        { receiverId: userId }
+      ]
+    })
+    .populate('callerId', 'name profilePicture')
+    .populate('receiverId', 'name profilePicture')
+    .sort({ createdAt: -1 })
+    .limit(100); // Limit to last 100 calls
+    
+    res.json({
+      success: true,
+      calls: calls
+    });
+  } catch (error) {
+    console.error("Error fetching call history:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Delete single call history
+app.delete("/api/calls/history/:callId", async (req, res) => {
+  try {
+    const { callId } = req.params;
+    await CallHistory.findByIdAndDelete(callId);
+    res.json({
+      success: true,
+      message: "Call history deleted successfully"
+    });
+  } catch (error) {
+    console.error("Error deleting call history:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Delete all call history for a user
+app.delete("/api/calls/history/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    await CallHistory.deleteMany({
+      $or: [
+        { callerId: userId },
+        { receiverId: userId }
+      ]
+    });
+    res.json({
+      success: true,
+      message: "All call history deleted successfully"
+    });
+  } catch (error) {
+    console.error("Error deleting call history:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 });
 
 // =============================================
