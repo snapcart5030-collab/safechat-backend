@@ -1181,9 +1181,12 @@ app.get("/api/users/online/all", (req, res) => {
 
 
 // Get call history for a user
+// Get call history for a user
 app.get("/api/calls/history/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
+    
+    console.log(`📞 Fetching call history for user: ${userId}`);
     
     const calls = await CallHistory.find({
       $or: [
@@ -1194,7 +1197,15 @@ app.get("/api/calls/history/:userId", async (req, res) => {
     .populate('callerId', 'name profilePicture')
     .populate('receiverId', 'name profilePicture')
     .sort({ createdAt: -1 })
-    .limit(100); // Limit to last 100 calls
+    .limit(100);
+    
+    console.log(`📞 Found ${calls.length} calls`);
+    console.log("📞 First call sample:", calls[0] ? {
+      callId: calls[0].callId,
+      callerId: calls[0].callerId,
+      receiverId: calls[0].receiverId,
+      status: calls[0].status
+    } : 'No calls');
     
     res.json({
       success: true,
