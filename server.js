@@ -22,6 +22,7 @@ const chatCustomizationRoutes = require('./routes/chatCustomizationRoutes');
 const Message = require("./models/Message");
 const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
+const CallHistory = require("./models/CallHistory");
 
 const app = express();
 const server = http.createServer(app);
@@ -174,15 +175,15 @@ io.on("connection", (socket) => {
       const unblocker = await User.findById(unblockerId);
       const unblocked = await User.findById(unblockedId);
 
-      const wasConnected = unblocker.previousConnections && 
+      const wasConnected = unblocker.previousConnections &&
         unblocker.previousConnections.some(id => id.toString() === unblockedId);
 
       // Emit to unblocked user
       io.to(unblockedId).emit("userUnblocked", {
         by: unblockerId,
         byName: unblockerName,
-        message: wasConnected 
-          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+        message: wasConnected
+          ? `${unblockerName} has unblocked you. Your connection has been restored!`
           : `${unblockerName} has unblocked you. You can chat again!`,
         unblocked: true,
         connectionRestored: wasConnected,
@@ -204,8 +205,8 @@ io.on("connection", (socket) => {
         blocked: false,
         unblocked: true,
         connectionRestored: wasConnected,
-        lastMessage: wasConnected 
-          ? `${unblockerName} has unblocked you. Your connection has been restored!` 
+        lastMessage: wasConnected
+          ? `${unblockerName} has unblocked you. Your connection has been restored!`
           : `${unblockerName} has unblocked you. You can chat now!`,
         lastMessageTime: new Date(),
       });
@@ -216,8 +217,8 @@ io.on("connection", (socket) => {
         blocked: false,
         unblocked: true,
         connectionRestored: wasConnected,
-        lastMessage: wasConnected 
-          ? `You unblocked ${unblockedName}. Your connection has been restored!` 
+        lastMessage: wasConnected
+          ? `You unblocked ${unblockedName}. Your connection has been restored!`
           : `You unblocked ${unblockedName}. You can chat now!`,
         lastMessageTime: new Date(),
       });
@@ -242,7 +243,7 @@ io.on("connection", (socket) => {
           name: unblockedName,
           message: `Your connection with ${unblockedName} has been restored!`,
         });
-        
+
         io.to(unblockedId).emit("followRestored", {
           with: unblockerId,
           name: unblockerName,
@@ -252,7 +253,7 @@ io.on("connection", (socket) => {
 
     } catch (error) {
       console.error("Error in unblock socket event:", error);
-      
+
       // Fallback: still emit basic unblock events
       io.to(unblockedId).emit("userUnblocked", {
         by: unblockerId,
@@ -338,7 +339,7 @@ io.on("connection", (socket) => {
     userSocketMap.set(socket.id, userId);
 
     console.log(`✅ User Joined Room: ${userId}`);
-    
+
     // SYNCHRONIZATION: Mark all offline messages as delivered
     try {
       const Message = require("./models/Message");
@@ -431,11 +432,28 @@ io.on("connection", (socket) => {
   console.log("🎙️ Setting up voice call listeners for socket:", socket.id);
 
   // Handle voice call request - User A calls User B
-  socket.on("voice-call-request", (data) => {
+  socket.on("voice-call-request", async (data) => {
     const { callId, callerId, receiverId, callerName, receiverName } = data;
 
     if (!callId || callerId !== authenticatedUserId || !receiverId || callerId === receiverId) return;
+        
 
+  try {
+    await CallHistory.create({
+      callId,
+      callerId,
+      receiverId,
+      callType: "voice",
+      status: "calling",
+      startedAt: new Date(),
+    });
+
+    console.log("📞 Voice call history created");
+  } catch (err) {
+    console.log("Call History Error:", err.message);
+  }
+
+  
     console.log(`📞 Voice call request from ${callerName} (${callerId}) to ${receiverName} (${receiverId})`);
 
     const receiverSockets = onlineUsers.get(receiverId);
