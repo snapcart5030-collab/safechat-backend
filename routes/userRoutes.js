@@ -13,6 +13,10 @@ const {
   unblockUser,
   getBlockedUsers,
   checkBlockStatus,
+  addFavoriteUser,
+  removeFavoriteUser,
+  getFavoriteUsers,
+  checkFavoriteStatus,
 } = require("../controllers/userController");
 
 // Secure all user routes
@@ -23,20 +27,61 @@ const owns = (value) => (req, res, next) => {
   next();
 };
 
+
+// ================= FAVORITES =================
 router.get("/", getUsers);
-router.get("/search", (req, res, next) => { req.query.currentUserId = req.user._id.toString(); next(); }, searchUsers);
+
+router.get("/search", (req, res, next) => {
+  req.query.currentUserId = req.user._id.toString();
+  next();
+}, searchUsers);
+
 router.post("/block", blockUser);
+
 router.post("/unblock", unblockUser);
-router.get("/blocked/:id", owns((req) => req.params.id), getBlockedUsers);
-router.get("/:id", getUserById); // IMPORTANT: this must come AFTER /search
-router.put("/update-profile", (req, res, next) => { req.body.id = req.user._id.toString(); next(); }, updateProfile);
+
+router.get("/blocked/:id",
+  owns((req) => req.params.id),
+  getBlockedUsers
+);
+
+// ================= FAVORITES =================
+
+router.post("/favorite", addFavoriteUser);
+
+router.post("/unfavorite", removeFavoriteUser);
+
+router.get(
+  "/favorites/:id",
+  owns((req) => req.params.id),
+  getFavoriteUsers
+);
+
+router.get(
+  "/favorite-status/:userId/:targetId",
+  owns((req) => req.params.userId),
+  checkFavoriteStatus
+);
+
+// Block Status
+router.get(
+  "/block-status/:userId/:targetUserId",
+  owns((req) => req.params.userId),
+  checkBlockStatus
+);
+
+// LAST
+router.get("/:id", getUserById);
+
+router.put("/update-profile", (req, res, next) => {
+  req.body.id = req.user._id.toString();
+  next();
+}, updateProfile);
 
 router.put("/upload-profile", upload.single("image"), async (req, res) => {
   res.json({
     imageUrl: req.file.path,
   });
 });
-
-router.get("/block-status/:userId/:targetUserId", owns((req) => req.params.userId), checkBlockStatus);
 
 module.exports = router;

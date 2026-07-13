@@ -70,7 +70,13 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
-
+     
+    favoriteUsers: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+],
     // NEW: Track one-time messages from blocked users
     blockedMessages: [
       {

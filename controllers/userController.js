@@ -176,9 +176,9 @@ const sendFollowRequest = async (req, res) => {
 const getFollowRequests = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -307,7 +307,7 @@ const acceptFollowRequest = async (req, res) => {
 const rejectFollowRequest = async (req, res) => {
   try {
     const { currentUserId, requesterId } = req.body;
-    
+
     const currentUser = await User.findById(currentUserId);
 
     if (!currentUser) {
@@ -354,9 +354,9 @@ const rejectFollowRequest = async (req, res) => {
 const getAcceptedUsers = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -386,9 +386,9 @@ const getAcceptedUsers = async (req, res) => {
 const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -418,9 +418,9 @@ const getFollowers = async (req, res) => {
 const getAllConnections = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -433,7 +433,7 @@ const getAllConnections = async (req, res) => {
 
     const connections = [...populatedUser.following, ...populatedUser.followers];
     const uniqueConnections = connections.filter(
-      (user, index, self) => 
+      (user, index, self) =>
         index === self.findIndex((u) => u._id.toString() === user._id.toString()) &&
         !populatedUser.blockedUsers.some(
           (blockedId) => blockedId.toString() === user._id.toString()
@@ -526,7 +526,7 @@ const checkFollowingStatus = async (req, res) => {
     const { currentUserId, targetUserId } = req.params;
 
     const currentUser = await User.findById(currentUserId);
-    
+
     if (!currentUser) {
       return res.status(404).json({
         message: "User not found",
@@ -561,9 +561,9 @@ const checkFollowingStatus = async (req, res) => {
 const getMutualFriends = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await User.findById(userId);
-    
+
     if (!user) {
       return res.status(404).json({
         message: "User not found",
@@ -576,7 +576,7 @@ const getMutualFriends = async (req, res) => {
 
     const mutualFriends = populatedUser.following.filter((followedUser) =>
       populatedUser.followers.some(
-        (follower) => 
+        (follower) =>
           follower._id.toString() === followedUser._id.toString() &&
           !populatedUser.blockedUsers.some(
             (blockedId) => blockedId.toString() === followedUser._id.toString()
@@ -743,7 +743,7 @@ const unblockUser = async (req, res) => {
         with: blockedUserId,
         name: unblockedUser.name,
       });
-      
+
       global.io.to(blockedUserId).emit("chatRestored", {
         with: userId,
         name: user.name,
@@ -1017,6 +1017,143 @@ const checkBlockStatus = async (req, res) => {
   }
 };
 
+
+const addFavoriteUser = async (req, res) => {
+  try {
+    const { favoriteUserId } = req.body;
+    const userId = req.user._id.toString();
+
+    if (userId === favoriteUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot favorite yourself.",
+      });
+    }
+
+    const user = await User.findById(userId);
+    const favoriteUser = await User.findById(favoriteUserId);
+
+    if (!user || !favoriteUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    if (
+      user.favoriteUsers.some(
+        (id) => id.toString() === favoriteUserId
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "User already in favorites.",
+      });
+    }
+
+    user.favoriteUsers.push(favoriteUserId);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Added to favorites.",
+    });
+  } catch (err) {
+    console.error("Add Favorite Error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+
+const removeFavoriteUser = async (req, res) => {
+  try {
+    const { favoriteUserId } = req.body;
+    const userId = req.user._id.toString();
+
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        favoriteUsers: favoriteUserId,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Removed from favorites.",
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+const getFavoriteUsers = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id).populate(
+      "favoriteUsers",
+      "_id name picture email username bio"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      favorites: user.favoriteUsers,
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+const checkFavoriteStatus = async (req, res) => {
+  try {
+    const { userId, targetId } = req.params;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const isFavorite = user.favoriteUsers.some(
+      (id) => id.toString() === targetId
+    );
+
+    res.json({
+      success: true,
+      isFavorite,
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
 module.exports = {
   getUsers,
   updateProfile,
@@ -1036,4 +1173,8 @@ module.exports = {
   checkFollowingStatus,
   getMutualFriends,
   checkBlockStatus,
+  addFavoriteUser,
+  removeFavoriteUser,
+  getFavoriteUsers,
+  checkFavoriteStatus,
 };
