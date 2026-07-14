@@ -550,6 +550,34 @@ const uploadAttachment = async (req, res) => {
   }
 };
 
+
+
+const uploadChatImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No image uploaded",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      fileUrl: req.file.path,
+      fileName: req.file.originalname,
+      fileType: "image",
+      fileSize: req.file.size,
+    });
+  } catch (error) {
+    console.error("Chat image upload error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const reactToMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -670,6 +698,7 @@ module.exports = {
   deliverOfflineMessages,
   checkBlockStatus,
   uploadAttachment,
+  uploadChatImage,
   reactToMessage,
   editMessage,
   starMessage,

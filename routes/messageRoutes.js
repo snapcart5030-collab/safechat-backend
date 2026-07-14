@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const { protect } = require("../middlewares/authMiddleware");
 const attachmentUpload = require("../config/attachmentUpload");
+const chatImageUpload = require("../config/chatImageUpload");
 
 const {
   sendMessage,
@@ -15,12 +16,14 @@ const {
   deleteMessage,
   deliverOfflineMessages,
   uploadAttachment,
+  uploadChatImage,
   reactToMessage,
   editMessage,
   starMessage,
   pinMessage,
   getSharedMedia,
 } = require("../controllers/messageController");
+
 
 // Secure all routes
 router.use(protect);
@@ -54,6 +57,11 @@ router.post("/deliver-offline", deliverOfflineMessages);
 
 // Upload rich file attachments
 router.post("/upload", attachmentUpload.single("file"), uploadAttachment);
+router.post(
+  "/upload-image",
+  chatImageUpload.single("image"),
+  uploadChatImage
+);
 
 // Toggle emoji reaction
 router.post("/:messageId/react", reactToMessage);
