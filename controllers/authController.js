@@ -42,6 +42,9 @@ exports.googleLogin = async (req, res) => {
         email,
         name,
         picture,
+
+        language: "en",
+        languageSelected: false,
       });
 
       console.log("New User Saved");

@@ -40,6 +40,17 @@ const userSchema = new mongoose.Schema(
         default: null,
       },
     },
+
+    language: {
+      type: String,
+      enum: ["en", "mr", "hi", "te"],
+      default: "en",
+    },
+
+    languageSelected: {
+      type: Boolean,
+      default: false,
+    },
     // FOLLOWERS
     followers: [
       {
@@ -63,20 +74,20 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
-    
+
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-     
+
     favoriteUsers: [
-  {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
-],
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     // NEW: Track one-time messages from blocked users
     blockedMessages: [
       {
@@ -98,7 +109,7 @@ const userSchema = new mongoose.Schema(
         },
       },
     ],
-    
+
     // WHATSAPP-STYLE EXTRA FIELDS
     username: {
       type: String,
