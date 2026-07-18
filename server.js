@@ -24,6 +24,7 @@ const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
 const CallHistory = require("./models/CallHistory");
 const languageRoutes = require("./routes/languageRoutes");
+import appSettingsRoutes from "./routes/appSettingsRoutes.js";
 const app = express();
 const server = http.createServer(app);
 
@@ -96,6 +97,7 @@ app.use("/uploads", express.static("uploads"));
 app.use('/api/chat-customization', chatCustomizationRoutes);
 app.use("/api/location", liveLocationRoutes);
 app.use("/api/language", languageRoutes);
+app.use("/api/settings", appSettingsRoutes);
 
 // ================= ONLINE USERS TRACKING =================
 const onlineUsers = new Map(); // Store userId -> Set of socketIds
