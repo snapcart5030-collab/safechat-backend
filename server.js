@@ -24,7 +24,7 @@ const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
 const CallHistory = require("./models/CallHistory");
 const languageRoutes = require("./routes/languageRoutes");
-import appSettingsRoutes from "./routes/appSettingsRoutes.js";
+const appSettingsRoutes=require("./routes/appSettingsRoutes.js");
 const app = express();
 const server = http.createServer(app);
 
