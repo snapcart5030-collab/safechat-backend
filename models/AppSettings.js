@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const appSettingsSchema = new mongoose.Schema(
   {
@@ -10,4 +10,4 @@ const appSettingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("AppSettings", appSettingsSchema);
+module.exports = mongoose.model("AppSettings", appSettingsSchema);

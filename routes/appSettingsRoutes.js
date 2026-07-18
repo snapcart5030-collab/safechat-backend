@@ -1,12 +1,12 @@
-import express from "express";
-import {
+const express = require("express");
+const {
   getSettings,
   updateHeaderColor,
-} from "../controllers/appSettingsController.js";
+} = require("../controllers/appSettingsController");
 
 const router = express.Router();
 
 router.get("/", getSettings);
 router.put("/header-color", updateHeaderColor);
 
-export default router;
+module.exports = router;

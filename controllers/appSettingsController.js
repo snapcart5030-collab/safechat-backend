@@ -1,7 +1,6 @@
-import AppSettings from "../models/AppSettings.js";
+const AppSettings = require("../models/AppSettings");
 
-// Get Settings
-export const getSettings = async (req, res) => {
+const getSettings = async (req, res) => {
   let settings = await AppSettings.findOne();
 
   if (!settings) {
@@ -13,8 +12,7 @@ export const getSettings = async (req, res) => {
   res.json(settings);
 };
 
-// Update Header Color
-export const updateHeaderColor = async (req, res) => {
+const updateHeaderColor = async (req, res) => {
   const { headerColor } = req.body;
 
   let settings = await AppSettings.findOne();
@@ -32,4 +30,9 @@ export const updateHeaderColor = async (req, res) => {
     success: true,
     settings,
   });
+};
+
+module.exports = {
+  getSettings,
+  updateHeaderColor,
 };
