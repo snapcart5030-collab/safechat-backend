@@ -29,6 +29,7 @@ const notificationSchema = new mongoose.Schema(
         "like",                // When someone likes your post
         "comment",             // When someone comments on your post
         "mention",             // When someone mentions you
+        "admin_announcement",  // A platform announcement from SafeChat administrators
       ],
       required: true,
     },

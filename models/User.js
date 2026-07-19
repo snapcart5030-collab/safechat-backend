@@ -174,6 +174,9 @@ const userSchema = new mongoose.Schema(
       reviewedAt: { type: Date, default: null },
       reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     },
+    isSuspended: { type: Boolean, default: false },
+    suspendedAt: { type: Date, default: null },
+    suspensionReason: { type: String, default: "" },
   },
   {
     timestamps: true,

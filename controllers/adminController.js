@@ -3,7 +3,7 @@ const Message = require("../models/Message");
 const Notification = require("../models/Notification");
 const AppSettings = require("../models/AppSettings");
 
-const publicUser = "_id name email picture username bio role adminRequest createdAt lastSeen onlineStatus";
+const publicUser = "_id name email picture username bio role adminRequest createdAt lastSeen onlineStatus isSuspended suspendedAt suspensionReason";
 
 exports.requestAccess = async (req, res) => {
   const note = String(req.body?.note || "").trim().slice(0, 500);
@@ -59,4 +59,29 @@ exports.updateSettings = async (req, res) => {
   if (!/^#[0-9A-Fa-f]{6}$/.test(headerColor)) return res.status(400).json({ success: false, message: "Use a six-digit hex colour." });
   const settings = await AppSettings.findOneAndUpdate({}, { headerColor }, { new: true, upsert: true });
   res.json({ success: true, settings });
+};
+
+exports.updateUserStatus = async (req, res) => {
+  const { suspended, reason = "" } = req.body;
+  if (typeof suspended !== "boolean") return res.status(400).json({ success: false, message: "A suspension status is required." });
+  const target = await User.findById(req.params.userId);
+  if (!target) return res.status(404).json({ success: false, message: "User not found." });
+  if (target._id.equals(req.user._id)) return res.status(400).json({ success: false, message: "You cannot change your own access." });
+  if (target.role === "admin") return res.status(403).json({ success: false, message: "Admin accounts cannot be suspended here." });
+  target.isSuspended = suspended;
+  target.suspendedAt = suspended ? new Date() : null;
+  target.suspensionReason = suspended ? String(reason).trim().slice(0, 300) : "";
+  await target.save();
+  res.json({ success: true, user: target.toObject(), message: suspended ? "Account suspended." : "Account restored." });
+};
+
+exports.announce = async (req, res) => {
+  const message = String(req.body?.message || "").trim().slice(0, 500);
+  if (message.length < 3) return res.status(400).json({ success: false, message: "Announcement must be at least 3 characters." });
+  const recipients = await User.find({ _id: { $ne: req.user._id }, isSuspended: false }).select("_id").lean();
+  if (recipients.length) {
+    await Notification.insertMany(recipients.map((user) => ({ sender: req.user._id, receiver: user._id, type: "admin_announcement", message })));
+    if (global.io) recipients.forEach((user) => global.io.to(user._id.toString()).emit("newNotification", { senderName: "SafeChat Admin", type: "admin_announcement", message, createdAt: new Date() }));
+  }
+  res.json({ success: true, recipients: recipients.length, message: "Announcement sent." });
 };

@@ -22,6 +22,13 @@ const protect = async (req, res, next) => {
         });
       }
 
+      if (req.user.isSuspended) {
+        return res.status(403).json({
+          success: false,
+          message: "This SafeChat account has been suspended.",
+        });
+      }
+
       next();
     } catch (error) {
       console.error("Auth Middleware Error:", error);

@@ -12,5 +12,7 @@ router.get("/dashboard", admin.dashboard);
 router.get("/users", admin.listUsers);
 router.get("/requests", admin.listRequests);
 router.patch("/requests/:userId", admin.reviewRequest);
+router.patch("/users/:userId/status", admin.updateUserStatus);
+router.post("/announcements", admin.announce);
 router.put("/settings", admin.updateSettings);
 module.exports = router;
