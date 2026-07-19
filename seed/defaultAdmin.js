@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const User = require("../models/User");
+const Admin = require("../models/Admin");
 
 const createDefaultAdmin = async () => {
   try {
@@ -7,7 +7,7 @@ const createDefaultAdmin = async () => {
     const adminPassword = "Admin@123";
 
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ email: adminEmail });
+    const existingAdmin = await Admin.findOne({ email: adminEmail });
     if (existingAdmin) {
       console.log("✅ Default admin already exists");
       return;
@@ -17,18 +17,12 @@ const createDefaultAdmin = async () => {
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
     // Create admin
-    const admin = await User.create({
+    const admin = await Admin.create({
       name: "SafeChat Admin",
       email: adminEmail,
       password: hashedPassword,
       picture: "https://ui-avatars.com/api/?name=Admin&background=8B1FF8&color=fff&size=128",
       role: "admin",
-      adminRequest: {
-        status: "approved",
-        requestedAt: new Date(),
-        reviewedAt: new Date(),
-      },
-      bio: "SafeChat Administrator",
     });
 
     console.log("✅ Default admin created!");

@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const Admin = require("../models/Admin");
 
-const protect = async (req, res, next) => {
+const protectAdmin = async (req, res, next) => {
   let token;
 
   if (
@@ -10,28 +10,36 @@ const protect = async (req, res, next) => {
   ) {
     try {
       token = req.headers.authorization.split(" ")[1];
-
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      req.user = await User.findById(decoded.id).select("-googleId");
-
-      if (!req.user) {
+      // Check if it's an admin token
+      if (!decoded.role || decoded.role !== "admin") {
         return res.status(401).json({
           success: false,
-          message: "Not authorized, user not found",
+          message: "Not authorized as admin",
         });
       }
 
-      if (req.user.isSuspended) {
+      const admin = await Admin.findById(decoded.id).select("-password");
+
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      if (admin.isSuspended) {
         return res.status(403).json({
           success: false,
-          message: "This SafeChat account has been suspended.",
+          message: "Admin account has been suspended",
         });
       }
 
+      req.admin = admin;
       next();
     } catch (error) {
-      console.error("Auth Middleware Error:", error);
+      console.error("Admin Auth Middleware Error:", error);
       return res.status(401).json({
         success: false,
         message: "Not authorized, token failed",
@@ -47,4 +55,4 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+module.exports = { protectAdmin };
