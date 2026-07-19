@@ -41,19 +41,41 @@ const app = express();
 const server = http.createServer(app);
 
 // ==================== CORS CONFIGURATION ====================
-const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
-  .split(",")
-  .map((o) => o.trim());
+// Allow all origins for Render deployment
+const allowedOrigins = process.env.CLIENT_ORIGIN 
+  ? process.env.CLIENT_ORIGIN.split(",").map((o) => o.trim())
+  : ["*"];
 
 console.log("✅ Allowed origins:", allowedOrigins);
 
+// CORS middleware
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl requests)
+      if (!origin) return callback(null, true);
+      
+      // If allowedOrigins includes "*", allow all
+      if (allowedOrigins.includes("*")) {
+        return callback(null, true);
+      }
+      
+      // Check if origin is allowed
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log(`❌ Blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
@@ -61,7 +83,14 @@ app.use("/uploads", express.static("uploads"));
 // ==================== SOCKET.IO SETUP ====================
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes("*") || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST"],
   },
