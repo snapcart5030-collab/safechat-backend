@@ -50,6 +50,14 @@ exports.googleLogin = async (req, res) => {
       console.log("New User Saved");
     }
 
+    // Set this once in the server environment to create the first administrator:
+    // ADMIN_BOOTSTRAP_EMAIL=owner@example.com
+    if (process.env.ADMIN_BOOTSTRAP_EMAIL && email.toLowerCase() === process.env.ADMIN_BOOTSTRAP_EMAIL.toLowerCase() && user.role !== "admin") {
+      user.role = "admin";
+      user.adminRequest = { status: "approved", reviewedAt: new Date() };
+      await user.save();
+    }
+
     const token = jwt.sign(
       {
         id: user._id,

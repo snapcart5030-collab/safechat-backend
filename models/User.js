@@ -156,6 +156,24 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "Available",
     },
+    // Admin access is deliberately approval-based. New users can request it,
+    // but only an existing admin (or the configured bootstrap email) can grant it.
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    adminRequest: {
+      status: {
+        type: String,
+        enum: ["none", "pending", "approved", "rejected"],
+        default: "none",
+      },
+      note: { type: String, default: "" },
+      requestedAt: { type: Date, default: null },
+      reviewedAt: { type: Date, default: null },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    },
   },
   {
     timestamps: true,
