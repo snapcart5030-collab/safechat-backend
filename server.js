@@ -28,6 +28,8 @@ const appSettingsRoutes=require("./routes/appSettingsRoutes.js");
 const adminRoutes = require("./routes/adminRoutes");
 const app = express();
 const server = http.createServer(app);
+const createDefaultAdmin = require("./seed/defaultAdmin");
+createDefaultAdmin();
 
 const io = new Server(server, {
   cors: {

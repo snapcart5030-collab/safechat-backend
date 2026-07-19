@@ -7,24 +7,24 @@ const userSchema = new mongoose.Schema(
       default: "",
       index: true,
     },
-
     email: {
       type: String,
       required: true,
       unique: true,
       index: true,
     },
-
+    password: {
+      type: String,
+      required: false, // Google Users साठी false
+    },
     picture: {
       type: String,
       default: "",
     },
-
     googleId: {
       type: String,
       default: "",
     },
-
     fcmToken: {
       type: String,
       default: "",
@@ -34,19 +34,16 @@ const userSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
-
       resetAt: {
         type: Date,
         default: null,
       },
     },
-
     language: {
       type: String,
       enum: ["en", "mr", "hi", "te"],
       default: "en",
     },
-
     languageSelected: {
       type: Boolean,
       default: false,
@@ -58,37 +55,30 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
-
-    // FOLLOWING
     following: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
-    // PENDING REQUESTS
     followRequests: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
     favoriteUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-    // NEW: Track one-time messages from blocked users
     blockedMessages: [
       {
         blockerId: {
@@ -109,8 +99,6 @@ const userSchema = new mongoose.Schema(
         },
       },
     ],
-
-    // WHATSAPP-STYLE EXTRA FIELDS
     username: {
       type: String,
       index: { unique: true, sparse: true },
@@ -156,8 +144,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "Available",
     },
-    // Admin access is deliberately approval-based. New users can request it,
-    // but only an existing admin (or the configured bootstrap email) can grant it.
     role: {
       type: String,
       enum: ["user", "admin"],
@@ -183,7 +169,4 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model(
-  "User",
-  userSchema
-);
+module.exports = mongoose.model("User", userSchema);
