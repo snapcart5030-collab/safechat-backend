@@ -24,7 +24,7 @@ const User = require("./models/User");
 const liveLocationRoutes = require("./routes/liveLocationRoutes");
 const CallHistory = require("./models/CallHistory");
 const languageRoutes = require("./routes/languageRoutes");
-const appSettingsRoutes=require("./routes/appSettingsRoutes.js");
+const appSettingsRoutes = require("./routes/appSettingsRoutes.js");
 const app = express();
 const server = http.createServer(app);
 
@@ -114,6 +114,42 @@ const getSocketIdFromUserId = (userId) => {
     return [...userSockets][0];
   }
   return null;
+};
+
+// ================= HELPER FUNCTION TO EMIT CALL-ENDED EVENT =================
+const emitCallEndedEvent = async (callId, callData) => {
+  try {
+    // Get the call from database to get full details
+    const call = await CallHistory.findOne({ callId: callId });
+    if (!call) {
+      console.log(`⚠️ Call ${callId} not found in database for emission`);
+      return;
+    }
+
+    // Populate user names
+    const caller = await User.findById(call.callerId);
+    const receiver = await User.findById(call.receiverId);
+
+    const eventData = {
+      callId: call.callId,
+      callerId: call.callerId,
+      receiverId: call.receiverId,
+      callerName: caller?.name || 'Unknown',
+      receiverName: receiver?.name || 'Unknown',
+      duration: call.duration || 0,
+      callType: call.callType || 'voice',
+      status: call.status || 'ended',
+      timestamp: call.endedAt || new Date()
+    };
+
+    // Emit to both caller and receiver
+    io.to(call.callerId.toString()).emit('call-ended', eventData);
+    io.to(call.receiverId.toString()).emit('call-ended', eventData);
+    
+    console.log(`📤 Emitted call-ended event for ${callId} to both participants`);
+  } catch (error) {
+    console.error('Error emitting call-ended event:', error);
+  }
 };
 
 // ================= SOCKET.IO =================
@@ -467,39 +503,49 @@ io.on("connection", (socket) => {
 
     activeVoiceCalls.set(callId, call);
 
-  // In voice-call-request timeout
-setTimeout(async () => {
-  const currentCall = activeVoiceCalls.get(callId);
-  if (!currentCall) return;
-  if (currentCall.status === "calling") {
-    // Save as missed call
-    try {
-      await CallHistory.create({
-        callId: callId,
-        callerId: currentCall.callerId,
-        receiverId: currentCall.receiverId,
-        callType: "voice",
-        status: "missed",
-        startedAt: currentCall.startTime,
-        endedAt: new Date(),
-        duration: 0
-      });
-      console.log(`✅ Missed call saved for ${callId}`);
-    } catch (err) {
-      console.error("Error saving missed call:", err);
-    }
-    
-    io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
-      callId,
-      message: "No Answer"
-    });
-    io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
-      callId
-    });
-    activeVoiceCalls.delete(callId);
-    console.log("⏰ Call timeout");
-  }
-}, 30000);
+    // In voice-call-request timeout
+    setTimeout(async () => {
+      const currentCall = activeVoiceCalls.get(callId);
+      if (!currentCall) return;
+      if (currentCall.status === "calling") {
+        // Save as missed call
+        try {
+          await CallHistory.create({
+            callId: callId,
+            callerId: currentCall.callerId,
+            receiverId: currentCall.receiverId,
+            callType: "voice",
+            status: "missed",
+            startedAt: currentCall.startTime,
+            endedAt: new Date(),
+            duration: 0
+          });
+          console.log(`✅ Missed call saved for ${callId}`);
+          
+          // EMIT call-ended event for missed call
+          await emitCallEndedEvent(callId, {
+            callerId: currentCall.callerId,
+            receiverId: currentCall.receiverId,
+            duration: 0,
+            callType: 'voice',
+            status: 'missed'
+          });
+          
+        } catch (err) {
+          console.error("Error saving missed call:", err);
+        }
+        
+        io.to(currentCall.callerSocketId).emit("voice-call-rejected", {
+          callId,
+          message: "No Answer"
+        });
+        io.to(currentCall.receiverSocketId).emit("voice-call-ended-by-other", {
+          callId
+        });
+        activeVoiceCalls.delete(callId);
+        console.log("⏰ Call timeout");
+      }
+    }, 30000);
 
     io.to(receiverSocketId).emit("incoming-voice-call", {
       callId,
@@ -542,41 +588,51 @@ setTimeout(async () => {
   });
 
   // Handle reject voice call - User B rejects call from User A
-socket.on("reject-voice-call", async (data) => {
-  const { callId, callerId, receiverId, callerSocketId } = data;
+  socket.on("reject-voice-call", async (data) => {
+    const { callId, callerId, receiverId, callerSocketId } = data;
 
-  console.log(`❌ Voice call rejected: ${callId} by ${receiverId}`);
+    console.log(`❌ Voice call rejected: ${callId} by ${receiverId}`);
 
-  const call = activeVoiceCalls.get(callId);
-  if (call) {
-    try {
-      await CallHistory.create({
-        callId: callId,
-        callerId: call.callerId,
-        receiverId: call.receiverId,
-        callType: "voice",
-        status: "rejected",
-        startedAt: call.startTime,
-        endedAt: new Date(),
-        duration: 0
-      });
-      console.log(`✅ Rejected call saved for ${callId}`);
-    } catch (err) {
-      console.error("Error saving rejected call:", err);
+    const call = activeVoiceCalls.get(callId);
+    if (call) {
+      try {
+        await CallHistory.create({
+          callId: callId,
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          callType: "voice",
+          status: "rejected",
+          startedAt: call.startTime,
+          endedAt: new Date(),
+          duration: 0
+        });
+        console.log(`✅ Rejected call saved for ${callId}`);
+        
+        // EMIT call-ended event for rejected call
+        await emitCallEndedEvent(callId, {
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          duration: 0,
+          callType: 'voice',
+          status: 'rejected'
+        });
+        
+      } catch (err) {
+        console.error("Error saving rejected call:", err);
+      }
     }
-  }
 
-  activeVoiceCalls.delete(callId);
-  const targetSocketId = callerSocketId || null;
-  if (targetSocketId) {
-    io.to(targetSocketId).emit("voice-call-rejected", {
-      callId,
-      callerId,
-      receiverId,
-      message: "Call rejected",
-    });
-  }
-});
+    activeVoiceCalls.delete(callId);
+    const targetSocketId = callerSocketId || null;
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("voice-call-rejected", {
+        callId,
+        callerId,
+        receiverId,
+        message: "Call rejected",
+      });
+    }
+  });
 
   // Handle WebRTC offer - Caller sends offer to Receiver
   socket.on("voice-call-offer", (data) => {
@@ -679,47 +735,59 @@ socket.on("reject-voice-call", async (data) => {
     console.log(`✅ ICE candidate sent to socket: ${targetId}`);
   });
 
-  // Handle call end with proper cleanup
-socket.on("voice-call-ended", async (data) => {
-  const { callId, callerId, receiverId } = data;
-  
-  console.log(`📞 Voice call ended: ${callId}`);
-  
-  const call = activeVoiceCalls.get(callId);
-  if (call) {
-    // Calculate duration
-    const duration = Math.floor((new Date() - call.startTime) / 1000);
+  // Handle call end with proper cleanup and emission
+  socket.on("voice-call-ended", async (data) => {
+    const { callId, callerId, receiverId } = data;
     
-    // Save to database
-    try {
-      await CallHistory.create({
-        callId: callId,
-        callerId: call.callerId,
-        receiverId: call.receiverId,
-        callType: "voice",
-        status: call.status === "calling" ? "missed" : "ended",
-        startedAt: call.startTime,
-        endedAt: new Date(),
-        duration: duration
-      });
-      console.log(`✅ Call history saved for call ${callId}`);
-    } catch (err) {
-      console.error("Error saving call history:", err);
-    }
+    console.log(`📞 Voice call ended: ${callId}`);
     
-    const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
-    peers.forEach((peerSocketId) => {
-      if (peerSocketId !== socket.id) {
-        io.to(peerSocketId).emit("voice-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
+    const call = activeVoiceCalls.get(callId);
+    if (call) {
+      // Calculate duration
+      const duration = Math.floor((new Date() - call.startTime) / 1000);
+      
+      // Save to database
+      try {
+        const callStatus = call.status === "calling" ? "missed" : "ended";
+        
+        await CallHistory.create({
+          callId: callId,
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          callType: "voice",
+          status: callStatus,
+          startedAt: call.startTime,
+          endedAt: new Date(),
+          duration: duration
         });
+        console.log(`✅ Call history saved for call ${callId}`);
+        
+        // EMIT call-ended event to both participants
+        await emitCallEndedEvent(callId, {
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          duration: duration,
+          callType: 'voice',
+          status: callStatus
+        });
+        
+      } catch (err) {
+        console.error("Error saving call history:", err);
       }
-    });
-    activeVoiceCalls.delete(callId);
-    console.log(`🧹 Call ${callId} cleaned up`);
-  }
-});
+      
+      const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
+      peers.forEach((peerSocketId) => {
+        if (peerSocketId !== socket.id) {
+          io.to(peerSocketId).emit("voice-call-ended-by-other", {
+            callId,
+            endedBy: socket.userId || "unknown",
+          });
+        }
+      });
+      activeVoiceCalls.delete(callId);
+      console.log(`🧹 Call ${callId} cleaned up`);
+    }
+  });
 
   // Handle call busy
   socket.on("voice-call-busy", (data) => {
@@ -775,10 +843,37 @@ socket.on("voice-call-ended", async (data) => {
     activeVideoCalls.set(callId, call);
 
     // Set timeout for unanswered call
-    setTimeout(() => {
+    setTimeout(async () => {
       const currentCall = activeVideoCalls.get(callId);
       if (!currentCall) return;
       if (currentCall.status === "calling") {
+        // Save as missed call
+        try {
+          await CallHistory.create({
+            callId: callId,
+            callerId: currentCall.callerId,
+            receiverId: currentCall.receiverId,
+            callType: "video",
+            status: "missed",
+            startedAt: currentCall.startTime,
+            endedAt: new Date(),
+            duration: 0
+          });
+          console.log(`✅ Missed video call saved for ${callId}`);
+          
+          // EMIT call-ended event for missed video call
+          await emitCallEndedEvent(callId, {
+            callerId: currentCall.callerId,
+            receiverId: currentCall.receiverId,
+            duration: 0,
+            callType: 'video',
+            status: 'missed'
+          });
+          
+        } catch (err) {
+          console.error("Error saving missed video call:", err);
+        }
+        
         io.to(currentCall.callerSocketId).emit("video-call-rejected", {
           callId,
           message: "No Answer"
@@ -832,10 +927,39 @@ socket.on("voice-call-ended", async (data) => {
   });
 
   // Handle reject video call - User B rejects call from User A
-  socket.on("reject-video-call", (data) => {
+  socket.on("reject-video-call", async (data) => {
     const { callId, callerId, receiverId, callerSocketId } = data;
 
     console.log(`❌ Video call rejected: ${callId} by ${receiverId}`);
+
+    const call = activeVideoCalls.get(callId);
+    if (call) {
+      try {
+        await CallHistory.create({
+          callId: callId,
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          callType: "video",
+          status: "rejected",
+          startedAt: call.startTime,
+          endedAt: new Date(),
+          duration: 0
+        });
+        console.log(`✅ Rejected video call saved for ${callId}`);
+        
+        // EMIT call-ended event for rejected video call
+        await emitCallEndedEvent(callId, {
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          duration: 0,
+          callType: 'video',
+          status: 'rejected'
+        });
+        
+      } catch (err) {
+        console.error("Error saving rejected video call:", err);
+      }
+    }
 
     activeVideoCalls.delete(callId);
 
@@ -962,47 +1086,59 @@ socket.on("voice-call-ended", async (data) => {
     console.log(`✅ Video ICE candidate sent to socket: ${targetId}`);
   });
 
-  // Handle video call end with proper cleanup
-socket.on("video-call-ended", async (data) => {
-  const { callId, callerId, receiverId } = data;
-  
-  console.log(`📹 Video call ended: ${callId}`);
-  
-  const call = activeVideoCalls.get(callId);
-  if (call) {
-    // Calculate duration
-    const duration = Math.floor((new Date() - call.startTime) / 1000);
+  // Handle video call end with proper cleanup and emission
+  socket.on("video-call-ended", async (data) => {
+    const { callId, callerId, receiverId } = data;
     
-    // Save to database
-    try {
-      await CallHistory.create({
-        callId: callId,
-        callerId: call.callerId,
-        receiverId: call.receiverId,
-        callType: "video",
-        status: call.status === "calling" ? "missed" : "ended",
-        startedAt: call.startTime,
-        endedAt: new Date(),
-        duration: duration
-      });
-      console.log(`✅ Video call history saved for call ${callId}`);
-    } catch (err) {
-      console.error("Error saving video call history:", err);
-    }
+    console.log(`📹 Video call ended: ${callId}`);
     
-    const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
-    peers.forEach((peerSocketId) => {
-      if (peerSocketId !== socket.id) {
-        io.to(peerSocketId).emit("video-call-ended-by-other", {
-          callId,
-          endedBy: socket.userId || "unknown",
+    const call = activeVideoCalls.get(callId);
+    if (call) {
+      // Calculate duration
+      const duration = Math.floor((new Date() - call.startTime) / 1000);
+      
+      // Save to database
+      try {
+        const callStatus = call.status === "calling" ? "missed" : "ended";
+        
+        await CallHistory.create({
+          callId: callId,
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          callType: "video",
+          status: callStatus,
+          startedAt: call.startTime,
+          endedAt: new Date(),
+          duration: duration
         });
+        console.log(`✅ Video call history saved for call ${callId}`);
+        
+        // EMIT call-ended event to both participants
+        await emitCallEndedEvent(callId, {
+          callerId: call.callerId,
+          receiverId: call.receiverId,
+          duration: duration,
+          callType: 'video',
+          status: callStatus
+        });
+        
+      } catch (err) {
+        console.error("Error saving video call history:", err);
       }
-    });
-    activeVideoCalls.delete(callId);
-    console.log(`🧹 Video call ${callId} cleaned up`);
-  }
-});
+      
+      const peers = [call.callerSocketId, call.receiverSocketId].filter(Boolean);
+      peers.forEach((peerSocketId) => {
+        if (peerSocketId !== socket.id) {
+          io.to(peerSocketId).emit("video-call-ended-by-other", {
+            callId,
+            endedBy: socket.userId || "unknown",
+          });
+        }
+      });
+      activeVideoCalls.delete(callId);
+      console.log(`🧹 Video call ${callId} cleaned up`);
+    }
+  });
 
   // Handle video call busy
   socket.on("video-call-busy", (data) => {
@@ -1181,10 +1317,6 @@ app.get("/api/users/online/all", (req, res) => {
   });
 });
 
-
-
-
-// Get call history for a user
 // Get call history for a user
 app.get("/api/calls/history/:userId", async (req, res) => {
   try {
