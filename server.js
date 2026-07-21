@@ -6,6 +6,7 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 
 console.log("Firebase Admin Connected Successfully");
 
@@ -116,37 +117,88 @@ const getSocketIdFromUserId = (userId) => {
   return null;
 };
 
+// ================= HELPER FUNCTION TO SAVE OR UPDATE CALL HISTORY =================
+const saveOrUpdateCallHistory = async (callData) => {
+  try {
+    const { callId, callerId, receiverId, callerName, receiverName, callType, status, startedAt, endedAt, duration } = callData;
+
+    if (!callId || !callerId || !receiverId) {
+      console.log(`⚠️ Missing callId (${callId}), callerId (${callerId}), or receiverId (${receiverId})`);
+      return null;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(callerId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
+      console.error(`❌ Invalid ObjectId for callerId (${callerId}) or receiverId (${receiverId})`);
+      return null;
+    }
+
+    const updateData = {
+      callId,
+      callerId,
+      receiverId,
+      callType: callType || "voice",
+      status: status || "ended",
+      startedAt: startedAt ? new Date(startedAt) : new Date(),
+      endedAt: endedAt ? new Date(endedAt) : new Date(),
+      duration: Number(duration) || 0,
+    };
+
+    if (callerName) updateData.callerName = callerName;
+    if (receiverName) updateData.receiverName = receiverName;
+
+    const savedCall = await CallHistory.findOneAndUpdate(
+      { callId: callId },
+      { $set: updateData },
+      { upsert: true, new: true }
+    );
+    console.log(`✅ Saved/Updated call history for call ${callId}`);
+    return savedCall;
+  } catch (err) {
+    console.error(`❌ Error saving call history for call ${callData?.callId}:`, err);
+    return null;
+  }
+};
+
 // ================= HELPER FUNCTION TO EMIT CALL-ENDED EVENT =================
 const emitCallEndedEvent = async (callId, callData) => {
   try {
-    // Get the call from database to get full details
     const call = await CallHistory.findOne({ callId: callId });
-    if (!call) {
-      console.log(`⚠️ Call ${callId} not found in database for emission`);
+    let callerIdStr = callData?.callerId?.toString() || call?.callerId?.toString();
+    let receiverIdStr = callData?.receiverId?.toString() || call?.receiverId?.toString();
+
+    if (!callerIdStr || !receiverIdStr) {
+      console.log(`⚠️ Could not determine callerId/receiverId for emitCallEndedEvent ${callId}`);
       return;
     }
 
-    // Populate user names
-    const caller = await User.findById(call.callerId);
-    const receiver = await User.findById(call.receiverId);
+    let callerName = call?.callerName || callData?.callerName;
+    let receiverName = call?.receiverName || callData?.receiverName;
+
+    if (!callerName || !receiverName) {
+      const caller = await User.findById(callerIdStr);
+      const receiver = await User.findById(receiverIdStr);
+      if (!callerName) callerName = caller?.name || 'Unknown';
+      if (!receiverName) receiverName = receiver?.name || 'Unknown';
+    }
 
     const eventData = {
-      callId: call.callId,
-      callerId: call.callerId,
-      receiverId: call.receiverId,
-      callerName: caller?.name || 'Unknown',
-      receiverName: receiver?.name || 'Unknown',
-      duration: call.duration || 0,
-      callType: call.callType || 'voice',
-      status: call.status || 'ended',
-      timestamp: call.endedAt || new Date()
+      callId: callId,
+      callerId: callerIdStr,
+      receiverId: receiverIdStr,
+      callerName: callerName,
+      receiverName: receiverName,
+      duration: callData?.duration ?? call?.duration ?? 0,
+      callType: callData?.callType || call?.callType || 'voice',
+      status: callData?.status || call?.status || 'ended',
+      timestamp: call?.endedAt || new Date()
     };
 
-    // Emit to both caller and receiver
-    io.to(call.callerId.toString()).emit('call-ended', eventData);
-    io.to(call.receiverId.toString()).emit('call-ended', eventData);
+    io.to(callerIdStr).emit('call-ended', eventData);
+    io.to(receiverIdStr).emit('call-ended', eventData);
+    io.to(callerIdStr).emit('call-saved', eventData);
+    io.to(receiverIdStr).emit('call-saved', eventData);
     
-    console.log(`📤 Emitted call-ended event for ${callId} to both participants`);
+    console.log(`📤 Emitted call-ended event for ${callId} to both participants (${callerIdStr}, ${receiverIdStr})`);
   } catch (error) {
     console.error('Error emitting call-ended event:', error);
   }
@@ -510,10 +562,12 @@ io.on("connection", (socket) => {
       if (currentCall.status === "calling") {
         // Save as missed call
         try {
-          await CallHistory.create({
+          await saveOrUpdateCallHistory({
             callId: callId,
             callerId: currentCall.callerId,
             receiverId: currentCall.receiverId,
+            callerName: currentCall.callerName,
+            receiverName: currentCall.receiverName,
             callType: "voice",
             status: "missed",
             startedAt: currentCall.startTime,
@@ -596,10 +650,12 @@ io.on("connection", (socket) => {
     const call = activeVoiceCalls.get(callId);
     if (call) {
       try {
-        await CallHistory.create({
+        await saveOrUpdateCallHistory({
           callId: callId,
           callerId: call.callerId,
           receiverId: call.receiverId,
+          callerName: call.callerName,
+          receiverName: call.receiverName,
           callType: "voice",
           status: "rejected",
           startedAt: call.startTime,
@@ -750,10 +806,12 @@ io.on("connection", (socket) => {
       try {
         const callStatus = call.status === "calling" ? "missed" : "ended";
         
-        await CallHistory.create({
+        await saveOrUpdateCallHistory({
           callId: callId,
           callerId: call.callerId,
           receiverId: call.receiverId,
+          callerName: call.callerName,
+          receiverName: call.receiverName,
           callType: "voice",
           status: callStatus,
           startedAt: call.startTime,
@@ -849,10 +907,12 @@ io.on("connection", (socket) => {
       if (currentCall.status === "calling") {
         // Save as missed call
         try {
-          await CallHistory.create({
+          await saveOrUpdateCallHistory({
             callId: callId,
             callerId: currentCall.callerId,
             receiverId: currentCall.receiverId,
+            callerName: currentCall.callerName,
+            receiverName: currentCall.receiverName,
             callType: "video",
             status: "missed",
             startedAt: currentCall.startTime,
@@ -935,10 +995,12 @@ io.on("connection", (socket) => {
     const call = activeVideoCalls.get(callId);
     if (call) {
       try {
-        await CallHistory.create({
+        await saveOrUpdateCallHistory({
           callId: callId,
           callerId: call.callerId,
           receiverId: call.receiverId,
+          callerName: call.callerName,
+          receiverName: call.receiverName,
           callType: "video",
           status: "rejected",
           startedAt: call.startTime,
@@ -1101,10 +1163,12 @@ io.on("connection", (socket) => {
       try {
         const callStatus = call.status === "calling" ? "missed" : "ended";
         
-        await CallHistory.create({
+        await saveOrUpdateCallHistory({
           callId: callId,
           callerId: call.callerId,
           receiverId: call.receiverId,
+          callerName: call.callerName,
+          receiverName: call.receiverName,
           callType: "video",
           status: callStatus,
           startedAt: call.startTime,
@@ -1137,6 +1201,27 @@ io.on("connection", (socket) => {
       });
       activeVideoCalls.delete(callId);
       console.log(`🧹 Video call ${callId} cleaned up`);
+    }
+  });
+
+  // Handle generic call-ended event from client (voice or video)
+  socket.on("call-ended", async (data) => {
+    const { callId, callerId, receiverId, duration, callType, status, callerName, receiverName } = data || {};
+    console.log(`🔚 call-ended event received for call ${callId}`);
+    if (callId && callerId && receiverId) {
+      await saveOrUpdateCallHistory({
+        callId,
+        callerId,
+        receiverId,
+        callerName,
+        receiverName,
+        callType: callType || 'voice',
+        status: status || 'ended',
+        startedAt: new Date(Date.now() - (duration || 0) * 1000),
+        endedAt: new Date(),
+        duration: duration || 0
+      });
+      await emitCallEndedEvent(callId, data);
     }
   });
 
@@ -1317,8 +1402,56 @@ app.get("/api/users/online/all", (req, res) => {
   });
 });
 
+// Save call history from REST API
+app.post(["/api/calls/save", "/api/calls/history"], async (req, res) => {
+  try {
+    const { callId, callerId, receiverId, callerName, receiverName, callType, status, startedAt, endedAt, duration } = req.body;
+
+    if (!callId || !callerId || !receiverId) {
+      return res.status(400).json({ success: false, message: "Missing required fields (callId, callerId, receiverId)" });
+    }
+
+    const savedCall = await saveOrUpdateCallHistory({
+      callId,
+      callerId,
+      receiverId,
+      callerName,
+      receiverName,
+      callType,
+      status,
+      startedAt,
+      endedAt,
+      duration
+    });
+
+    if (!savedCall) {
+      return res.status(400).json({ success: false, message: "Failed to save call history. Verify user IDs." });
+    }
+
+    // Emit real-time event
+    await emitCallEndedEvent(callId, {
+      callerId,
+      receiverId,
+      callerName,
+      receiverName,
+      duration,
+      callType,
+      status
+    });
+
+    res.json({
+      success: true,
+      message: "Call history saved successfully",
+      call: savedCall
+    });
+  } catch (error) {
+    console.error("Error in POST /api/calls/save:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Get call history for a user
-app.get("/api/calls/history/:userId", async (req, res) => {
+app.get(["/api/calls/history/:userId", "/api/calls/user/:userId"], async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -1335,13 +1468,7 @@ app.get("/api/calls/history/:userId", async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(100);
     
-    console.log(`📞 Found ${calls.length} calls`);
-    console.log("📞 First call sample:", calls[0] ? {
-      callId: calls[0].callId,
-      callerId: calls[0].callerId,
-      receiverId: calls[0].receiverId,
-      status: calls[0].status
-    } : 'No calls');
+    console.log(`📞 Found ${calls.length} calls for user: ${userId}`);
     
     res.json({
       success: true,
@@ -1357,13 +1484,22 @@ app.get("/api/calls/history/:userId", async (req, res) => {
 });
 
 // Delete single call history
-app.delete("/api/calls/history/:callId", async (req, res) => {
+app.delete(["/api/calls/history/:callId", "/api/calls/:callId"], async (req, res) => {
   try {
     const { callId } = req.params;
-    await CallHistory.findByIdAndDelete(callId);
+    const isObjectId = mongoose.Types.ObjectId.isValid(callId);
+    
+    const result = await CallHistory.deleteMany({
+      $or: [
+        { _id: isObjectId ? callId : null },
+        { callId: callId }
+      ]
+    });
+
     res.json({
       success: true,
-      message: "Call history deleted successfully"
+      message: "Call history deleted successfully",
+      deletedCount: result.deletedCount
     });
   } catch (error) {
     console.error("Error deleting call history:", error);
@@ -1375,7 +1511,7 @@ app.delete("/api/calls/history/:callId", async (req, res) => {
 });
 
 // Delete all call history for a user
-app.delete("/api/calls/history/user/:userId", async (req, res) => {
+app.delete(["/api/calls/history/user/:userId", "/api/calls/user/:userId"], async (req, res) => {
   try {
     const { userId } = req.params;
     await CallHistory.deleteMany({

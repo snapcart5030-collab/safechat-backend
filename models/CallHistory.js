@@ -20,6 +20,14 @@ const callHistorySchema = new mongoose.Schema(
         required: true
     },
 
+    callerName: {
+        type: String
+    },
+
+    receiverName: {
+        type: String
+    },
+
     callType: {
         type: String,
         enum: ["voice", "video"],
