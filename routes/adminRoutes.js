@@ -305,4 +305,37 @@ router.get("/settings", async (req, res) => {
   }
 });
 
+// ---- Admin Requests ----
+router.get("/admin-requests", async (req, res) => {
+  try {
+    const pendingAdmins = await Admin.find({ status: "pending" }).sort({ createdAt: -1 });
+    res.json(pendingAdmins);
+  } catch (error) {
+    console.error("Admin requests fetch error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+router.post("/admin-requests/:id/approve", async (req, res) => {
+  try {
+    const admin = await Admin.findByIdAndUpdate(req.params.id, { status: "approved" }, { new: true });
+    if (!admin) return res.status(404).json({ message: "Admin request not found" });
+    res.json({ message: "Admin request approved", admin });
+  } catch (error) {
+    console.error("Approve admin request error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+router.post("/admin-requests/:id/reject", async (req, res) => {
+  try {
+    const admin = await Admin.findByIdAndUpdate(req.params.id, { status: "rejected" }, { new: true });
+    if (!admin) return res.status(404).json({ message: "Admin request not found" });
+    res.json({ message: "Admin request rejected", admin });
+  } catch (error) {
+    console.error("Reject admin request error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
 module.exports = router;

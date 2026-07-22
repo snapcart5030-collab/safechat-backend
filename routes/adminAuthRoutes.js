@@ -29,11 +29,21 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    // Check approval status for non-superadmin
+    if (admin.role !== "superadmin" && admin.status === "pending") {
+      console.log("❌ Admin login blocked: pending approval");
+      return res.status(403).json({ message: "Your admin account is pending approval by the Super Admin." });
+    }
+    if (admin.role !== "superadmin" && admin.status === "rejected") {
+      console.log("❌ Admin login blocked: request rejected");
+      return res.status(403).json({ message: "Your admin account request has been rejected." });
+    }
+
     console.log("✅ Login successful!");
     const token = admin.email;
     res.json({
       token,
-      admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role },
+      admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, status: admin.status },
     });
   } catch (err) {
     console.error("❌ Login error:", err);

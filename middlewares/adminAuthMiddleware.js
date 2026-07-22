@@ -35,6 +35,9 @@ async function protectAdmin(req, res, next) {
 
     const admin = await Admin.findOne({ email: token.toLowerCase() });
     if (!admin) return res.status(401).json({ message: "Admin not found" });
+    if (admin.role !== "superadmin" && admin.status !== "approved") {
+      return res.status(403).json({ message: "Your admin account is pending approval or has been rejected." });
+    }
 
     req.admin = admin;
     next();

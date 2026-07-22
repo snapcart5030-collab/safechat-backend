@@ -12,14 +12,22 @@ function initSockets(io) {
     // token can still connect (e.g. a logged-out visitor) but won't join
     // any authenticated room.
     if (token) {
+      let isAdminSocket = false;
       try {
-        const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
-        const admin = await Admin.findById(decoded.id);
-        if (admin) {
-          socket.join("admins");
-          socket.data.adminId = admin._id.toString();
+        if (typeof token === "string" && token.includes("@")) {
+          const admin = await Admin.findOne({ email: token.toLowerCase() });
+          if (admin && (admin.role === "superadmin" || admin.status === "approved")) {
+            socket.join("admins");
+            socket.data.adminId = admin._id.toString();
+            isAdminSocket = true;
+            console.log(`🔌 Admin socket connected: ${admin.email}`);
+          }
         }
-      } catch {
+      } catch (err) {
+        console.error("Admin socket auth error:", err);
+      }
+
+      if (!isAdminSocket) {
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
           const user = await User.findById(decoded.id);

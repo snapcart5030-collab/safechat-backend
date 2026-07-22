@@ -29,6 +29,7 @@ const createAdmin = async () => {
       email: email,
       password: hashedPassword,
       role: 'superadmin',
+      status: 'approved',
     });
 
     console.log('✅ Admin created successfully!');
