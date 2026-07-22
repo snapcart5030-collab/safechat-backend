@@ -865,6 +865,18 @@ socket.on("voice-call-unhold", (data) => {
   console.log(`📞 Unhold signal for call ${callId}`);
   io.to(targetId).emit("voice-call-unhold", data);
 });
+
+socket.on("video-call-hold", (data) => {
+  const { callId, targetId } = data;
+  console.log(`📹 Hold signal for video call ${callId}`);
+  io.to(targetId).emit("video-call-hold", data);
+});
+
+socket.on("video-call-unhold", (data) => {
+  const { callId, targetId } = data;
+  console.log(`📹 Unhold signal for video call ${callId}`);
+  io.to(targetId).emit("video-call-unhold", data);
+});
   // Handle call busy
   socket.on("voice-call-busy", (data) => {
     const { callId, callerId, receiverId } = data;
