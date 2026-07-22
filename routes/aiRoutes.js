@@ -8,56 +8,98 @@ const genAI = new GoogleGenerativeAI(
   process.env.GEMINI_API_KEY
 );
 
+router.get("/usage/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        answer: "User not found",
+      });
+    }
+
+    if (!user.aiUsage) {
+      user.aiUsage = {
+        count: 0,
+        resetAt: null,
+      };
+    }
+
+    const now = new Date();
+
+    // 12 तास पूर्ण झाले तर reset
+    if (
+      user.aiUsage.resetAt &&
+      now > user.aiUsage.resetAt
+    ) {
+      user.aiUsage.count = 0;
+      user.aiUsage.resetAt = null;
+      await user.save();
+    }
+
+    res.json({
+      aiUsage: user.aiUsage,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      answer: "Error fetching AI usage",
+    });
+  }
+});
+
 router.post("/ask", async (req, res) => {
   try {
 
     const { question, userId } = req.body;
 
- const user = await User.findById(userId);
+    const user = await User.findById(userId);
 
-if (!user) {
-  return res.status(404).json({
-    answer: "User not found",
-  });
-}
+    if (!user) {
+      return res.status(404).json({
+        answer: "User not found",
+      });
+    }
 
-if (!user.aiUsage) {
-  user.aiUsage = {
-    count: 0,
-    resetAt: null,
-  };
-}
+    if (!user.aiUsage) {
+      user.aiUsage = {
+        count: 0,
+        resetAt: null,
+      };
+    }
 
-const now = new Date();
+    const now = new Date();
 
-// 12 तास पूर्ण झाले तर reset
-if (
-  user.aiUsage.resetAt &&
-  now > user.aiUsage.resetAt
-) {
-  user.aiUsage.count = 0;
-  user.aiUsage.resetAt = null;
-}
+    // 12 तास पूर्ण झाले तर reset
+    if (
+      user.aiUsage.resetAt &&
+      now > user.aiUsage.resetAt
+    ) {
+      user.aiUsage.count = 0;
+      user.aiUsage.resetAt = null;
+    }
 
-// Limit check
-if (user.aiUsage.count >= 6) {
-  return res.status(429).json({
-    answer:
-      "AI limit reached. Please try again after 12 hours.",
-  });
-}
+    // Limit check
+    if (user.aiUsage.count >= 6) {
+      return res.status(429).json({
+        answer:
+          "AI limit reached. Please try again after 12 hours.",
+        aiUsage: user.aiUsage,
+      });
+    }
 
-// First question
-if (!user.aiUsage.resetAt) {
-  user.aiUsage.resetAt = new Date(
-    now.getTime() +
-      12 * 60 * 60 * 1000
-  );
-}
+    // First question
+    if (!user.aiUsage.resetAt) {
+      user.aiUsage.resetAt = new Date(
+        now.getTime() +
+          12 * 60 * 60 * 1000
+      );
+    }
 
-user.aiUsage.count += 1;
+    user.aiUsage.count += 1;
 
-await user.save();
+    await user.save();
 
     const model =
       genAI.getGenerativeModel({
@@ -74,6 +116,7 @@ await user.save();
 
     res.json({
       answer: response,
+      aiUsage: user.aiUsage,
     });
 
   } catch (error) {
