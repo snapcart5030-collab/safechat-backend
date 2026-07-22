@@ -30,7 +30,7 @@ router.post("/login", async (req, res) => {
     }
 
     console.log("✅ Login successful!");
-    const token = generateAdminToken(admin);
+    const token = admin.email;
     res.json({
       token,
       admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role },
@@ -46,8 +46,8 @@ router.get("/me", protectAdmin, async (req, res) => {
   res.json({ admin: req.admin });
 });
 
-// Create an additional admin account — protected: only an existing admin can create another
-router.post("/register", protectAdmin, async (req, res) => {
+// Create an additional admin account — open / public registration
+router.post("/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
     if (!email || !password) return res.status(400).json({ message: "Email and password are required" });

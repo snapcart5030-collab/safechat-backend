@@ -26,6 +26,8 @@ const liveLocationRoutes = require("./routes/liveLocationRoutes");
 const CallHistory = require("./models/CallHistory");
 const languageRoutes = require("./routes/languageRoutes");
 const appSettingsRoutes = require("./routes/appSettingsRoutes.js");
+const adminAuthRoutes = require("./routes/adminAuthRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const app = express();
 const server = http.createServer(app);
 
@@ -99,6 +101,8 @@ app.use('/api/chat-customization', chatCustomizationRoutes);
 app.use("/api/location", liveLocationRoutes);
 app.use("/api/language", languageRoutes);
 app.use("/api/settings", appSettingsRoutes);
+app.use("/api/admin", adminAuthRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ================= ONLINE USERS TRACKING =================
 const onlineUsers = new Map(); // Store userId -> Set of socketIds
@@ -847,6 +851,20 @@ io.on("connection", (socket) => {
     }
   });
 
+
+
+  // Voice Call Hold
+socket.on("voice-call-hold", (data) => {
+  const { callId, targetId } = data;
+  console.log(`📞 Hold signal for call ${callId}`);
+  io.to(targetId).emit("voice-call-hold", data);
+});
+
+socket.on("voice-call-unhold", (data) => {
+  const { callId, targetId } = data;
+  console.log(`📞 Unhold signal for call ${callId}`);
+  io.to(targetId).emit("voice-call-unhold", data);
+});
   // Handle call busy
   socket.on("voice-call-busy", (data) => {
     const { callId, callerId, receiverId } = data;

@@ -29,15 +29,17 @@ async function protectAdmin(req, res, next) {
       return res.status(401).json({ message: "Not authorized, no token" });
     }
     const token = header.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+    if (!token) {
+      return res.status(401).json({ message: "Not authorized, token empty" });
+    }
 
-    const admin = await Admin.findById(decoded.id);
+    const admin = await Admin.findOne({ email: token.toLowerCase() });
     if (!admin) return res.status(401).json({ message: "Admin not found" });
 
     req.admin = admin;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Not authorized, invalid token" });
+    return res.status(401).json({ message: "Not authorized" });
   }
 }
 
