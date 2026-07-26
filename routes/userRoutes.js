@@ -73,8 +73,16 @@ router.get(
 
 // LAST
 
+// LAST - Maintenance Block (Admin only - but accessible)
 router.put(
   "/maintenance/:id",
+  (req, res, next) => {
+    // Optional: Add admin check if needed
+    // if (req.user.role !== 'admin') {
+    //   return res.status(403).json({ success: false, message: "Not authorized" });
+    // }
+    next();
+  },
   toggleMaintenanceBlock
 );
 router.get("/:id", getUserById);

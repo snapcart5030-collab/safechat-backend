@@ -1155,32 +1155,35 @@ const checkFavoriteStatus = async (req, res) => {
 };
 
 
+// ================= MAINTENANCE BLOCK =================
 const toggleMaintenanceBlock = async (req, res) => {
   try {
     const { id } = req.params;
     const { maintenanceBlocked } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { maintenanceBlocked },
-      { new: true }
-    );
-
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found"
       });
     }
 
+    user.maintenanceBlocked = maintenanceBlocked;
+    await user.save();
+
     res.json({
       success: true,
-      user,
+      user: {
+        _id: user._id,
+        maintenanceBlocked: user.maintenanceBlocked
+      }
     });
-  } catch (err) {
+  } catch (error) {
+    console.error("Toggle maintenance error:", error);
     res.status(500).json({
       success: false,
-      message: err.message,
+      message: error.message
     });
   }
 };
