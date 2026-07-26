@@ -1,16 +1,16 @@
 const express = require("express");
-
-const router = express.Router();
-
+const { protectAdmin } = require("../middlewares/adminAuthMiddleware");
 const {
   getSettings,
   updateSettings,
 } = require("../controllers/siteSettingsController");
 
-// GET SETTINGS
+const router = express.Router();
+
+// GET SETTINGS - Public (no auth needed)
 router.get("/", getSettings);
 
-// UPDATE SETTINGS
-router.put("/", updateSettings);
+// UPDATE SETTINGS - Admin only
+router.put("/", protectAdmin, updateSettings);
 
 module.exports = router;
