@@ -88,6 +88,15 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+
+    maintenanceBlocked: {
+    type: Boolean,
+    default: false,
+},
+maintenanceBypass: {
+    type: Boolean,
+    default: false,
+},
     // NEW: Track one-time messages from blocked users
     blockedMessages: [
       {

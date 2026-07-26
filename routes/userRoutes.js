@@ -17,6 +17,7 @@ const {
   removeFavoriteUser,
   getFavoriteUsers,
   checkFavoriteStatus,
+  toggleMaintenanceBlock,
 } = require("../controllers/userController");
 
 // Secure all user routes
@@ -71,6 +72,11 @@ router.get(
 );
 
 // LAST
+
+router.put(
+  "/maintenance/:id",
+  toggleMaintenanceBlock
+);
 router.get("/:id", getUserById);
 
 router.put("/update-profile", (req, res, next) => {
